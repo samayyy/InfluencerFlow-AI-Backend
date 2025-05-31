@@ -3,7 +3,7 @@ require('dotenv').config();
 const pool = require('../../lib/db/postgres');
 
 const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY, // This is the default and can be omitted
+    apiKey: process.env.OPENAI_API_KEY,
 });
 
 class AIPromptSearch {
@@ -13,7 +13,7 @@ class AIPromptSearch {
     async getEmbedding(text) {
         try {
             const response = await openai.embeddings.create({
-                model: "text-embedding-3-large", // or text-embedding-3-large for better quality
+                model: "text-embedding-3-large", // 3072 dimensions
                 input: text,
             });
             return response.data[0].embedding;
@@ -22,6 +22,7 @@ class AIPromptSearch {
             throw error;
         }
     }
+
     /**
      * Create a comprehensive text representation of creator profile
      */
@@ -51,9 +52,42 @@ class AIPromptSearch {
             profileParts.push(`Languages: ${languages}`);
         }
 
+        // Personality profile from JSON field
+        if (creatorData.personality_profile) {
+            try {
+                const personality = typeof creatorData.personality_profile === 'string' 
+                    ? JSON.parse(creatorData.personality_profile) 
+                    : creatorData.personality_profile;
+                
+                const personalityTexts = [];
+                if (personality.content_style) personalityTexts.push(`Content style: ${personality.content_style}`);
+                if (personality.communication_tone) personalityTexts.push(`Communication tone: ${personality.communication_tone}`);
+                if (personality.collaboration_style) personalityTexts.push(`Collaboration style: ${personality.collaboration_style}`);
+                
+                if (personalityTexts.length > 0) {
+                    profileParts.push(personalityTexts.join(', '));
+                }
+            } catch (e) {
+                // Skip if JSON parsing fails
+            }
+        }
+
+        // Personality from dedicated table
+        if (creatorData.content_style || creatorData.communication_tone || creatorData.posting_frequency) {
+            const personalityParts = [];
+            if (creatorData.content_style) personalityParts.push(`Content style: ${creatorData.content_style}`);
+            if (creatorData.communication_tone) personalityParts.push(`Communication tone: ${creatorData.communication_tone}`);
+            if (creatorData.posting_frequency) personalityParts.push(`Posting frequency: ${creatorData.posting_frequency}`);
+            if (creatorData.collaboration_style) personalityParts.push(`Collaboration style: ${creatorData.collaboration_style}`);
+            if (creatorData.interaction_style) personalityParts.push(`Interaction style: ${creatorData.interaction_style}`);
+            
+            if (personalityParts.length > 0) {
+                profileParts.push(personalityParts.join(', '));
+            }
+        }
+
         // Add audience interests if available
         if (creatorData.audience_interests && creatorData.audience_interests.length > 0) {
-            // Flatten the array since it comes from ARRAY_AGG
             const interests = creatorData.audience_interests
                 .flat()
                 .filter(interest => interest !== null)
@@ -63,7 +97,29 @@ class AIPromptSearch {
             }
         }
 
-        // Add past collaborations
+        // Add specific interests from demographics
+        if (creatorData.specific_interests && creatorData.specific_interests.length > 0) {
+            const specificInterests = creatorData.specific_interests
+                .flat()
+                .filter(interest => interest !== null)
+                .join(', ');
+            if (specificInterests) {
+                profileParts.push(`Specific audience interests: ${specificInterests}`);
+            }
+        }
+
+        // Add related topics from demographics
+        if (creatorData.related_topics && creatorData.related_topics.length > 0) {
+            const topics = creatorData.related_topics
+                .flat()
+                .filter(topic => topic !== null)
+                .join(', ');
+            if (topics) {
+                profileParts.push(`Related topics: ${topics}`);
+            }
+        }
+
+        // Add past collaborations from both tables
         if (creatorData.past_brands && creatorData.past_brands.length > 0) {
             const brands = creatorData.past_brands
                 .filter(brand => brand !== null)
@@ -73,24 +129,46 @@ class AIPromptSearch {
             }
         }
 
+        // Add campaign descriptions from brand collaborations
+        if (creatorData.campaign_descriptions && creatorData.campaign_descriptions.length > 0) {
+            const campaigns = creatorData.campaign_descriptions
+                .filter(desc => desc !== null && desc.trim() !== '')
+                .join(', ');
+            if (campaigns) {
+                profileParts.push(`Recent campaign types: ${campaigns}`);
+            }
+        }
+
         return profileParts.join(' | ');
     }
+
     /**
      * Generate and store embedding for a specific creator
      */
     async generateCreatorEmbedding(creatorId) {
         try {
-            // Fetch comprehensive creator data
+            // Fetch comprehensive creator data from all related tables
             const query = `
                 SELECT 
                     c.*,
+                    cp.content_style,
+                    cp.communication_tone,
+                    cp.posting_frequency,
+                    cp.collaboration_style,
+                    cp.interaction_style,
                     ARRAY_AGG(DISTINCT cad.interests) as audience_interests,
-                    ARRAY_AGG(DISTINCT cc.brand_name) as past_brands
+                    ARRAY_AGG(DISTINCT cad.specific_interests) as specific_interests,
+                    ARRAY_AGG(DISTINCT cad.related_topics) as related_topics,
+                    ARRAY_AGG(DISTINCT cc.brand_name) as past_brands,
+                    ARRAY_AGG(DISTINCT cbc.campaign_description) as campaign_descriptions
                 FROM creators c
+                LEFT JOIN creator_personality cp ON c.id = cp.creator_id
                 LEFT JOIN creator_audience_demographics cad ON c.id = cad.creator_id
                 LEFT JOIN creator_collaborations cc ON c.id = cc.creator_id
+                LEFT JOIN creator_brand_collaborations cbc ON c.id = cbc.creator_id
                 WHERE c.id = $1
-                GROUP BY c.id
+                GROUP BY c.id, cp.content_style, cp.communication_tone, cp.posting_frequency, 
+                         cp.collaboration_style, cp.interaction_style
             `;
             
             const result = await pool.pool.query(query, [creatorId]);
@@ -120,10 +198,9 @@ class AIPromptSearch {
         } catch (error) {
             console.error(`Error generating embedding for creator ${creatorId}:`, error);
             throw error;
-        } finally {
-            //pool.pool.release();
         }
     }
+
     /**
      * Check if profile_embedding column exists and create it if not
      */
@@ -140,10 +217,10 @@ class AIPromptSearch {
             if (columnCheck.rows.length === 0) {
                 console.log('profile_embedding column not found. Creating it...');
                 
-                // Add the profile_embedding column
+                // Add the profile_embedding column with correct dimensions for text-embedding-3-large
                 await pool.pool.query(`
                     ALTER TABLE creators 
-                    ADD COLUMN profile_embedding vector(1536)
+                    ADD COLUMN profile_embedding vector(3072)
                 `);
                 
                 console.log('profile_embedding column created successfully');
@@ -173,6 +250,14 @@ class AIPromptSearch {
             } else {
                 console.log('profile_embedding column already exists');
                 
+                // Check if the column has the correct dimensions
+                const columnInfo = await pool.pool.query(`
+                    SELECT data_type, character_maximum_length
+                    FROM information_schema.columns 
+                    WHERE table_name = 'creators' 
+                    AND column_name = 'profile_embedding'
+                `);
+                
                 // Still check for index
                 const indexCheck = await pool.pool.query(`
                     SELECT indexname 
@@ -197,10 +282,9 @@ class AIPromptSearch {
         } catch (error) {
             console.error('Error ensuring embedding column exists:', error);
             throw error;
-        } finally {
-            //pool.pool.release();
         }
     }
+
     /**
      * Setup embeddings: ensure column exists and generate embeddings for all creators
      */
@@ -222,6 +306,7 @@ class AIPromptSearch {
             throw error;
         }
     }
+
     /**
      * Generate embeddings for all creators that don't have them
      */
@@ -265,10 +350,12 @@ class AIPromptSearch {
             
             console.log(`Embedding generation completed! Processed ${processed}/${total} creators`);
             
-        } finally {
-            //pool.pool.release();
+        } catch (error) {
+            console.error('Error in generateAllCreatorEmbeddings:', error);
+            throw error;
         }
     }
+
     /**
      * Search for creators based on query with optional filters
      */
@@ -337,6 +424,14 @@ class AIPromptSearch {
                     c.client_satisfaction_score,
                     c.total_collaborations,
                     c.avg_response_time_hours,
+                    c.personality_profile,
+                    c.content_examples,
+                    c.ai_enhanced,
+                    cpers.content_style,
+                    cpers.communication_tone,
+                    cpers.collaboration_style,
+                    cpers.posting_frequency,
+                    cpers.interaction_style,
                     cpm.platform,
                     cpm.follower_count,
                     cpm.engagement_rate,
@@ -348,6 +443,7 @@ class AIPromptSearch {
                     cp.currency,
                     1 - (c.profile_embedding <=> $1::vector) as similarity_score
                 FROM creators c
+                LEFT JOIN creator_personality cpers ON c.id = cpers.creator_id
                 LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
                 LEFT JOIN creator_pricing cp ON c.id = cp.creator_id AND cp.platform = cpm.platform
                 WHERE ${conditions.join(' AND ')}
@@ -358,10 +454,47 @@ class AIPromptSearch {
             const result = await pool.pool.query(searchQuery, params);
             return result.rows;
             
-        } finally {
-            //pool.pool.release();
+        } catch (error) {
+            console.error('Error in searchCreators:', error);
+            throw error;
         }
     }
+
+    /**
+     * Search creators based on personality traits
+     */
+    async searchByPersonality(options = {}) {
+        const {
+            contentStyle = null,
+            communicationTone = null,
+            collaborationStyle = null,
+            interactionStyle = null,
+            postingFrequency = null,
+            limit = 10
+        } = options;
+
+        try {
+            // Build personality-based query
+            const personalityQuery = [
+                contentStyle && `content style: ${contentStyle}`,
+                communicationTone && `communication tone: ${communicationTone}`,
+                collaborationStyle && `collaboration style: ${collaborationStyle}`,
+                interactionStyle && `interaction style: ${interactionStyle}`,
+                postingFrequency && `posting frequency: ${postingFrequency}`
+            ].filter(Boolean).join(', ');
+
+            if (!personalityQuery) {
+                throw new Error('At least one personality trait is required');
+            }
+
+            return await this.searchCreators(personalityQuery, { limit });
+
+        } catch (error) {
+            console.error('Error in searchByPersonality:', error);
+            throw error;
+        }
+    }
+
     /**
      * Get creator recommendations for a specific brand with advanced scoring
      */
@@ -468,6 +601,7 @@ class AIPromptSearch {
 
         return scoredCreators.slice(0, 10); // Return top 10
     }
+
     /**
      * Get detailed creator analysis
      */
@@ -476,77 +610,183 @@ class AIPromptSearch {
             const query = `
                 SELECT 
                     c.*,
+                    cp.content_style,
+                    cp.communication_tone,
+                    cp.posting_frequency,
+                    cp.collaboration_style,
+                    cp.interaction_style,
                     json_agg(DISTINCT jsonb_build_object(
                         'platform', cpm.platform,
                         'follower_count', cpm.follower_count,
                         'engagement_rate', cpm.engagement_rate,
-                        'avg_views', cpm.avg_views
-                    )) as platform_metrics,
+                        'avg_views', cpm.avg_views,
+                        'avg_likes', cpm.avg_likes,
+                        'followers_gained_30d', cpm.followers_gained_30d
+                    )) FILTER (WHERE cpm.id IS NOT NULL) as platform_metrics,
                     json_agg(DISTINCT jsonb_build_object(
-                        'platform', cp.platform,
-                        'sponsored_post_rate', cp.sponsored_post_rate,
-                        'story_mention_rate', cp.story_mention_rate,
-                        'video_integration_rate', cp.video_integration_rate,
-                        'currency', cp.currency
-                    )) as pricing,
+                        'platform', cprice.platform,
+                        'sponsored_post_rate', cprice.sponsored_post_rate,
+                        'story_mention_rate', cprice.story_mention_rate,
+                        'video_integration_rate', cprice.video_integration_rate,
+                        'brand_ambassadorship_monthly_rate', cprice.brand_ambassadorship_monthly_rate,
+                        'currency', cprice.currency
+                    )) FILTER (WHERE cprice.id IS NOT NULL) as pricing,
                     json_agg(DISTINCT jsonb_build_object(
                         'brand_name', cc.brand_name,
                         'campaign_type', cc.campaign_type,
                         'collaboration_date', cc.collaboration_date,
                         'success_rating', cc.success_rating
-                    )) as recent_collaborations
+                    )) FILTER (WHERE cc.id IS NOT NULL AND cc.collaboration_date > CURRENT_DATE - INTERVAL '12 months') as recent_collaborations,
+                    json_agg(DISTINCT jsonb_build_object(
+                        'brand_name', cbc.brand_name,
+                        'collaboration_type', cbc.collaboration_type,
+                        'collaboration_date', cbc.collaboration_date,
+                        'success_rating', cbc.success_rating,
+                        'campaign_description', cbc.campaign_description,
+                        'ai_generated', cbc.ai_generated
+                    )) FILTER (WHERE cbc.id IS NOT NULL AND cbc.collaboration_date > CURRENT_DATE - INTERVAL '12 months') as recent_brand_collaborations,
+                    json_agg(DISTINCT jsonb_build_object(
+                        'platform', cad.platform,
+                        'age_demographics', jsonb_build_object(
+                            'age_13_17', cad.age_13_17,
+                            'age_18_24', cad.age_18_24,
+                            'age_25_34', cad.age_25_34,
+                            'age_35_44', cad.age_35_44,
+                            'age_45_plus', cad.age_45_plus
+                        ),
+                        'gender_demographics', jsonb_build_object(
+                            'male', cad.gender_male,
+                            'female', cad.gender_female,
+                            'other', cad.gender_other
+                        ),
+                        'top_countries', cad.top_countries,
+                        'interests', cad.interests,
+                        'specific_interests', cad.specific_interests,
+                        'related_topics', cad.related_topics,
+                        'peak_hours', cad.peak_hours
+                    )) FILTER (WHERE cad.id IS NOT NULL) as audience_demographics
                 FROM creators c
+                LEFT JOIN creator_personality cp ON c.id = cp.creator_id
                 LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
-                LEFT JOIN creator_pricing cp ON c.id = cp.creator_id
+                LEFT JOIN creator_pricing cprice ON c.id = cprice.creator_id
                 LEFT JOIN creator_collaborations cc ON c.id = cc.creator_id 
-                    AND cc.collaboration_date > CURRENT_DATE - INTERVAL '12 months'
+                LEFT JOIN creator_brand_collaborations cbc ON c.id = cbc.creator_id
+                LEFT JOIN creator_audience_demographics cad ON c.id = cad.creator_id
                 WHERE c.id = $1
-                GROUP BY c.id
+                GROUP BY c.id, cp.content_style, cp.communication_tone, cp.posting_frequency, 
+                         cp.collaboration_style, cp.interaction_style
             `;
             
             const result = await pool.pool.query(query, [creatorId]);
             return result.rows[0] || null;
             
-        } finally {
-            //pool.pool.release();
+        } catch (error) {
+            console.error('Error in getCreatorAnalysis:', error);
+            throw error;
         }
     }
-    async searchByPrompt() {
-        
+
+    /**
+     * Search by natural language prompt - main demo function
+     */
+    async searchByPrompt(prompt = null, options = {}) {
         try {
-            // Generate embeddings for all creators (run once)
-            // await vectorSearch.generateAllCreatorEmbeddings();
+            const defaultPrompt = prompt || "Premium coffee brand targeting young professionals";
+            const defaultOptions = {
+                budget: 5000,
+                targetAudience: "coffee enthusiasts, young professionals, lifestyle",
+                platform: "instagram",
+                contentType: "lifestyle posts, product reviews",
+                ...options
+            };
+
+            console.log(`\n🔍 Searching for creators matching: "${defaultPrompt}"`);
+            console.log(`📊 Search criteria:`, defaultOptions);
+
+            // Search for creators
+            const recommendations = await this.getCreatorRecommendations(defaultPrompt, defaultOptions);
             
-            // Search for coffee brand creators
-            const recommendations = await this.getCreatorRecommendations(
-                "Premium coffee brand targeting young professionals",
-                {
-                    budget: 5000,
-                    targetAudience: "coffee enthusiasts, young professionals, lifestyle",
-                    platform: "instagram",
-                    contentType: "lifestyle posts, product reviews"
-                }
-            );
+            console.log('\n🏆 Top Creator Recommendations:');
+            console.log('=' .repeat(60));
             
-            console.log('Top Creator Recommendations:');
             recommendations.forEach((creator, index) => {
                 console.log(`\n${index + 1}. ${creator.creator_name} (@${creator.username})`);
-                console.log(`   Score: ${creator.total_score}/100`);
-                console.log(`   Followers: ${creator.follower_count?.toLocaleString()}`);
-                console.log(`   Engagement: ${creator.engagement_rate}%`);
-                console.log(`   Rate: $${creator.sponsored_post_rate} (${creator.currency})`);
-                console.log(`   Niche: ${creator.niche}`);
+                console.log(`   📈 Score: ${creator.total_score}/100`);
+                console.log(`   👥 Followers: ${creator.follower_count?.toLocaleString() || 'N/A'}`);
+                console.log(`   💝 Engagement: ${creator.engagement_rate || 'N/A'}%`);
+                console.log(`   💰 Rate: $${creator.sponsored_post_rate || 'N/A'} (${creator.currency || 'USD'})`);
+                console.log(`   🎯 Niche: ${creator.niche || 'N/A'}`);
+                console.log(`   📍 Location: ${creator.location_country || 'N/A'}`);
+                console.log(`   ⭐ Tier: ${creator.tier || 'N/A'}`);
+                console.log(`   🤖 AI Enhanced: ${creator.ai_enhanced ? 'Yes' : 'No'}`);
+                
+                // Show personality if available
+                if (creator.content_style || creator.communication_tone) {
+                    console.log(`   🎭 Personality:`);
+                    if (creator.content_style) console.log(`      • Content: ${creator.content_style}`);
+                    if (creator.communication_tone) console.log(`      • Communication: ${creator.communication_tone}`);
+                    if (creator.collaboration_style) console.log(`      • Collaboration: ${creator.collaboration_style}`);
+                }
+                
+                if (creator.score_breakdown) {
+                    console.log(`   📊 Score Breakdown:`);
+                    console.log(`      • Similarity: ${creator.score_breakdown.similarity.toFixed(1)}/35`);
+                    console.log(`      • Engagement: ${creator.score_breakdown.engagement.toFixed(1)}/25`);
+                    console.log(`      • Followers: ${creator.score_breakdown.followers.toFixed(1)}/15`);
+                    console.log(`      • Satisfaction: ${creator.score_breakdown.satisfaction.toFixed(1)}/15`);
+                    console.log(`      • Experience: ${creator.score_breakdown.experience.toFixed(1)}/10`);
+                }
             });
+
+            return recommendations;
             
         } catch (error) {
-            console.error('Error:', error);
-        } finally {
-            await vectorSearch.close();
+            console.error('❌ Error in searchByPrompt:', error);
+            throw error;
         }
     }
-    
 
-  }
-  
-  module.exports = new AIPromptSearch()
-  
+    /**
+     * Demo function to showcase different search capabilities
+     */
+    async runDemo() {
+        try {
+            console.log('\n🚀 Starting AI Creator Search Demo...\n');
+
+            // Demo 1: Coffee brand
+            await this.searchByPrompt("Sustainable coffee brand for millennials", {
+                budget: 3000,
+                targetAudience: "environmentally conscious millennials, coffee lovers",
+                platform: "instagram"
+            });
+
+            // Demo 2: Tech brand
+            await this.searchByPrompt("Innovative tech startup targeting developers", {
+                budget: 8000,
+                targetAudience: "software developers, tech enthusiasts, early adopters",
+                platform: "youtube"
+            });
+
+            // Demo 3: Personality-based search
+            console.log('\n🎭 Personality-Based Search Demo:');
+            const personalityResults = await this.searchByPersonality({
+                contentStyle: "authentic",
+                communicationTone: "friendly",
+                collaborationStyle: "professional",
+                limit: 5
+            });
+
+            console.log(`Found ${personalityResults.length} creators with matching personality:`);
+            personalityResults.forEach((creator, index) => {
+                console.log(`${index + 1}. ${creator.creator_name} - ${creator.content_style}, ${creator.communication_tone}`);
+            });
+
+            console.log('\n✅ Demo completed successfully!');
+
+        } catch (error) {
+            console.error('❌ Demo error:', error);
+        }
+    }
+}
+
+module.exports = new AIPromptSearch();

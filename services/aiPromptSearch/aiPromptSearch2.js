@@ -136,7 +136,7 @@ class AIPromptSearch {
                 GROUP BY c.id
             `;
             
-            const result = await pool.query(query, [creatorId]);
+            const result = await pool.pool.query(query, [creatorId]);
             
             if (result.rows.length === 0) {
                 throw new Error(`Creator with id ${creatorId} not found`);
@@ -161,7 +161,7 @@ class AIPromptSearch {
                 WHERE id = $2
             `;
             
-            await pool.query(updateQuery, [JSON.stringify(embedding), creatorId]);
+            await pool.pool.query(updateQuery, [JSON.stringify(embedding), creatorId]);
             
             console.log(`Generated embedding for creator ${creatorId}`);
             return embedding;
@@ -174,69 +174,81 @@ class AIPromptSearch {
     }
 
     /**
-     * Check if profile_embedding column exists and create it if not
+     * Check if profile_embedding column exists and create it if not.
+     * Ensures the correct HNSW index for cosine similarity is present.
      */
     async ensureEmbeddingColumnExists() {
         try {
             // Check if profile_embedding column exists
-            const columnCheck = await pool.query(`
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name = 'creators' 
+            const columnCheck = await pool.pool.query(`
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'creators'
                 AND column_name = 'profile_embedding'
             `);
-            
-            // text-embedding-3-large model has 3072 dimensions
-            const vectorDimension = 3072; 
+
+            const vectorDimension = 3072; // For text-embedding-3-large
 
             if (columnCheck.rows.length === 0) {
                 console.log('profile_embedding column not found. Creating it...');
-                
-                // Add the profile_embedding column
-                await pool.query(`
-                    ALTER TABLE creators 
+                await pool.pool.query(`
+                    ALTER TABLE creators
                     ADD COLUMN profile_embedding vector(${vectorDimension})
                 `);
-                
                 console.log(`profile_embedding column (vector(${vectorDimension})) created successfully`);
-                
-                // Check if index exists and create it if not (only if column was just created)
-                console.log('Creating vector index for profile_embedding...');
-                await pool.query(`
-                    CREATE INDEX IF NOT EXISTS creators_profile_embedding_idx 
-                    ON creators USING ivfflat (profile_embedding vector_cosine_ops) 
-                    WITH (lists = 100)
-                `);
-                console.log('Vector index creation process completed (created if it did not exist).');
-                
             } else {
                 console.log('profile_embedding column already exists.');
-                // Still check for index and create if missing
-                const indexCheck = await pool.query(`
-                    SELECT indexname 
-                    FROM pg_indexes 
-                    WHERE tablename = 'creators' 
-                    AND indexname = 'creators_profile_embedding_idx'
-                `);
-                
-                if (indexCheck.rows.length === 0) {
-                    console.log('Creating missing vector index for profile_embedding...');
-                    await pool.query(`
-                        CREATE INDEX creators_profile_embedding_idx 
-                        ON creators USING ivfflat (profile_embedding vector_cosine_ops) 
-                        WITH (lists = 100)
-                    `);
-                    console.log('Vector index created successfully');
-                } else {
-                    console.log('Vector index already exists.');
-                }
+                // You might want to add a check here to ensure the existing column is of the correct dimension
+                // For example, by querying pg_attribute, though this can be complex.
+                // For now, we assume if it exists, it's the correct vector type and dimension.
             }
-            
+
+            // Robust index management for HNSW with vector_cosine_ops
+            console.log('Ensuring correct HNSW vector index for profile_embedding (cosine similarity)...');
+            const existingIndexRes = await pool.pool.query(`
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE tablename = 'creators' AND indexname = 'creators_profile_embedding_idx';
+            `);
+
+            const expectedIndexName = 'creators_profile_embedding_idx';
+            const expectedIndexType = 'hnsw';
+            const expectedColumn = 'profile_embedding';
+            const expectedOperatorClass = 'vector_cosine_ops'; // For cosine similarity
+            let recreateIndex = false;
+
+            if (existingIndexRes.rows.length > 0) {
+                const indexDef = existingIndexRes.rows[0].indexdef;
+                // A more robust check would parse the definition properly,
+                // but string inclusion can work for basic verification.
+                if (!indexDef.includes(`USING ${expectedIndexType}`) ||
+                    !indexDef.includes(`${expectedColumn} ${expectedOperatorClass}`)) {
+                    console.warn(`Existing index '${expectedIndexName}' is not configured correctly for ${expectedIndexType} with ${expectedOperatorClass}. Dropping and recreating.`);
+                    await pool.pool.query(`DROP INDEX IF EXISTS ${expectedIndexName};`);
+                    recreateIndex = true;
+                } else {
+                    console.log(`Correct ${expectedIndexType} index '${expectedIndexName}' with ${expectedOperatorClass} already exists.`);
+                }
+            } else {
+                recreateIndex = true; // Index does not exist
+            }
+
+            if (recreateIndex) {
+                console.log(`Creating ${expectedIndexType} index '${expectedIndexName}' with ${expectedOperatorClass} for ${expectedColumn}...`);
+                // HNSW parameters (m, ef_construction) can be added for tuning if needed
+                // e.g., WITH (m = 16, ef_construction = 64)
+                await pool.pool.query(`
+                    CREATE INDEX ${expectedIndexName}
+                    ON creators
+                    USING ${expectedIndexType} (${expectedColumn} ${expectedOperatorClass})
+                `);
+                console.log(`${expectedIndexType} index '${expectedIndexName}' (vector_cosine_ops) created successfully.`);
+            }
+
         } catch (error) {
-            console.error('Error ensuring embedding column exists:', error);
+            console.error('Error ensuring embedding column and HNSW cosine index exists:', error);
             throw error;
         }
-        // No pool.release() here
     }
 
     /**
@@ -266,7 +278,7 @@ class AIPromptSearch {
      */
     async generateAllCreatorEmbeddings() {
         try {
-            const result = await pool.query(
+            const result = await pool.pool.query(
                 "SELECT id FROM creators WHERE profile_embedding IS NULL"
             );
             
@@ -318,9 +330,9 @@ class AIPromptSearch {
     }
 
     /**
-     * Search for creators based on query with optional filters
+     * Search for creators based on query with optional filters using cosine similarity.
      */
-    async searchCreators(query, options = {}) {
+    async searchCreators(queryText, options = {}) {
         const {
             limit = 10,
             minEngagementRate = null,
@@ -331,52 +343,38 @@ class AIPromptSearch {
         } = options;
 
         try {
-            // Generate embedding for the search query
-            const queryEmbedding = await this.getEmbedding(query);
-            
-            // Build the search query with filters
+            const queryEmbedding = await this.getEmbedding(queryText);
+
             const conditions = ["c.profile_embedding IS NOT NULL"];
-            const params = [JSON.stringify(queryEmbedding)];
-            let paramIndex = 2; // $1 is queryEmbedding
-            
-            // Join with creator_platform_metrics and creator_pricing only if needed for filters or selected data
-            // For simplicity, we join them as they are part of the SELECT statement.
-            // Ensure conditions correctly handle cases where a creator might not have metrics or pricing.
-            
+            const params = [JSON.stringify(queryEmbedding)]; // $1 for the query embedding
+            let paramIndex = 2;
+
             if (minEngagementRate !== null) {
                 conditions.push(`cpm.engagement_rate >= $${paramIndex++}`);
                 params.push(minEngagementRate);
             }
-            
             if (platform) {
-                conditions.push(`cpm.platform = $${paramIndex++}`); // Ensure cpm is joined
+                conditions.push(`cpm.platform = $${paramIndex++}`);
                 params.push(platform);
             }
-            
             if (maxPriceRange !== null) {
-                conditions.push(`cp.sponsored_post_rate <= $${paramIndex++}`); // Ensure cp is joined
+                conditions.push(`cp.sponsored_post_rate <= $${paramIndex++}`);
                 params.push(maxPriceRange);
             }
-            
             if (minFollowers !== null) {
-                conditions.push(`cpm.follower_count >= $${paramIndex++}`); // Ensure cpm is joined
+                conditions.push(`cpm.follower_count >= $${paramIndex++}`);
                 params.push(minFollowers);
             }
-            
             if (tier) {
                 conditions.push(`c.tier = $${paramIndex++}`);
                 params.push(tier);
             }
-            
-            params.push(limit); // For LIMIT clause, $${paramIndex}
-            
-            const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
-            // Note: If 'platform' is not specified in options, this query might return multiple rows per creator
-            // if they exist on multiple platforms. The original logic seems to expect 'platform' to be often set,
-            // especially in getCreatorRecommendations.
+            const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+            params.push(limit); // Last parameter for LIMIT
+
             const searchQuery = `
-                SELECT 
+                SELECT
                     c.id,
                     c.creator_name,
                     c.username,
@@ -398,137 +396,159 @@ class AIPromptSearch {
                     cp.story_mention_rate,
                     cp.video_integration_rate,
                     cp.currency,
-                    1 - (c.profile_embedding <=> $1::vector) as similarity_score
+                    (1 - (c.profile_embedding <-> $1::vector)) as similarity_score -- Cosine Similarity (ranges -1 to 1)
                 FROM creators c
                 LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
                 LEFT JOIN creator_pricing cp ON c.id = cp.creator_id AND (cpm.platform IS NULL OR cp.platform = cpm.platform)
                 ${whereClause}
-                ORDER BY c.profile_embedding <=> $1::vector
-                LIMIT $${paramIndex} 
+                ORDER BY c.profile_embedding <-> $1::vector ASC -- Order by cosine distance (ASC means smaller distance is better/first)
+                LIMIT $${paramIndex -1} -- paramIndex was incremented one last time before push(limit)
             `;
-            // The join condition `(cpm.platform IS NULL OR cp.platform = cpm.platform)` is a bit safer
-            // if cpm might not match due to filters but cp is still needed or vice-versa.
-            // If platform filter is always applied on cpm.platform, then `cp.platform = cpm.platform` is fine.
-            
-            const result = await pool.query(searchQuery, params);
+            // Correction: Limit should use the correct parameter index. If params.push(limit) is the last one,
+            // and paramIndex was the next available slot, then $${paramIndex} is correct for limit.
+            // The query above had $${paramIndex-1} which might be off by one depending on how paramIndex is managed.
+            // Let's re-verify the paramIndex for LIMIT.
+            // If params = [$1, $2, $3], limit is $4. paramIndex would be 4.
+            // Corrected limit placeholder:
+            // LIMIT $${params.length} (if params array includes the limit value itself)
+
+            // Let's refine paramIndex for clarity
+            // params array for query: [embedding, filter1, filter2, ..., limit_value]
+            // query: ... WHERE col1 = $2 AND col2 = $3 ... LIMIT $${conditions.length + 2}
+            // Or simply, if 'limit' is the last value pushed to params array:
+            // LIMIT $${params.length}
+
+            const finalSearchQuery = `
+                SELECT
+                    c.id, c.creator_name, c.username, c.bio, c.niche, c.content_categories, c.tier,
+                    c.location_country, c.location_city, c.client_satisfaction_score, c.total_collaborations,
+                    c.avg_response_time_hours, cpm.platform, cpm.follower_count, cpm.engagement_rate,
+                    cpm.avg_views, cpm.avg_likes, cp.sponsored_post_rate, cp.story_mention_rate,
+                    cp.video_integration_rate, cp.currency,
+                    (1 - (c.profile_embedding <-> $1::vector)) as similarity_score
+                FROM creators c
+                LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
+                LEFT JOIN creator_pricing cp ON c.id = cp.creator_id AND (cpm.platform IS NULL OR cp.platform = cpm.platform OR cpm.creator_id IS NULL)
+                ${whereClause}
+                ORDER BY c.profile_embedding <-> $1::vector ASC
+                LIMIT $${params.length}
+            `;
+            // Added OR cpm.creator_id IS NULL to the ON clause for cp join to handle cases where cpm might not match
+            // but we still want to consider the creator if other conditions pass (though pricing might be null).
+            // More commonly, if filtering by cpm.platform, this join is fine.
+
+
+            const result = await pool.pool.query(finalSearchQuery, params);
             return result.rows;
-            
+
         } catch (error) {
-            console.error('Error searching creators:', error);
+            console.error('Error searching creators with cosine similarity:', error);
             throw error;
         }
-        // No pool.release() here
     }
 
     /**
-     * Get creator recommendations for a specific brand with advanced scoring
+     * Get creator recommendations for a specific brand with advanced scoring, using cosine similarity.
      */
     async getCreatorRecommendations(brandDescription, options = {}) {
         const {
             budget = null,
             targetAudience = null,
-            platform = "instagram", // Default platform
+            platform = "instagram",
             contentType = null,
-            // region = null // region filter not implemented in searchCreators yet
+            // region = null // Not implemented in search
         } = options;
 
-        // Enhance query with additional context
         let enhancedQuery = `Brand: ${brandDescription}`;
-        if (targetAudience) {
-            enhancedQuery += ` | Target audience: ${targetAudience}`;
-        }
-        if (contentType) {
-            enhancedQuery += ` | Content type: ${contentType}`;
-        }
+        if (targetAudience) enhancedQuery += ` | Target audience: ${targetAudience}`;
+        if (contentType) enhancedQuery += ` | Content type: ${contentType}`;
 
-        // Set search options
         const searchOptions = {
-            limit: 20, // Fetch more initial candidates for scoring
-            minEngagementRate: 1.5, // Minimum 1.5% engagement rate
-            platform: platform // Crucial to ensure metrics and pricing are for the correct platform
+            limit: 20, // Fetch more for better scoring pool
+            minEngagementRate: 1.5,
+            platform: platform
         };
-
-        if (budget) {
-            searchOptions.maxPriceRange = budget;
-        }
-        // if (region && creatorData has region) { searchOptions.region = region; } // If region filter is added
+        if (budget) searchOptions.maxPriceRange = budget;
 
         const creators = await this.searchCreators(enhancedQuery, searchOptions);
 
-        // Add comprehensive scoring
         const scoredCreators = creators.map(creator => {
             let score = 0;
-            let scoreBreakdown = {};
+            const scoreBreakdown = {};
 
             // Similarity score (35% weight)
+            // creator.similarity_score is cosine similarity from the query (-1 to 1)
+            const cosineSimilarityRaw = creator.similarity_score === null || typeof creator.similarity_score === 'undefined'
+                ? 0 // Default to 0 (orthogonal) if null or undefined
+                : creator.similarity_score;
+
+            // Normalize cosine similarity from [-1, 1] to [0, 1] for weighting
+            // (score + 1) / 2 maps [-1,1] to [0,1] where 1 is most similar.
+            const normalizedSimilarity = (cosineSimilarityRaw + 1) / 2;
+
             const similarityWeight = 35;
-            const similarityScoreValue = creator.similarity_score || 0; // from 0 to 1
-            const similarityScore = similarityScoreValue * similarityWeight;
-            score += similarityScore;
-            scoreBreakdown.similarity = parseFloat(similarityScore.toFixed(2));
+            const similarityScoreContribution = normalizedSimilarity * similarityWeight;
+            score += similarityScoreContribution;
+            scoreBreakdown.similarity_contribution = parseFloat(similarityScoreContribution.toFixed(2));
+            scoreBreakdown.cosine_similarity_raw = parseFloat(cosineSimilarityRaw.toFixed(4));
 
             // Engagement rate (25% weight)
             const engagementWeight = 25;
             const engagement = creator.engagement_rate || 0;
-            let engagementScore = 0;
-            if (engagement > 8) engagementScore = engagementWeight; // Excellent
-            else if (engagement > 5) engagementScore = engagementWeight * 0.8; // Very Good
-            else if (engagement > 3) engagementScore = engagementWeight * 0.6; // Good
-            else if (engagement >= 1.5) engagementScore = engagementWeight * 0.4; // Fair (meets min criteria)
-            // else 0 for below 1.5
-            score += engagementScore;
-            scoreBreakdown.engagement = parseFloat(engagementScore.toFixed(2));
+            let engagementScoreContribution = 0;
+            if (engagement > 8) engagementScoreContribution = engagementWeight;
+            else if (engagement > 5) engagementScoreContribution = engagementWeight * 0.8;
+            else if (engagement > 3) engagementScoreContribution = engagementWeight * 0.6;
+            else if (engagement >= 1.5) engagementScoreContribution = engagementWeight * 0.4;
+            score += engagementScoreContribution;
+            scoreBreakdown.engagement_contribution = parseFloat(engagementScoreContribution.toFixed(2));
 
-            // Follower count (15% weight) - scaled appropriately
+            // Follower count (15% weight)
             const followerWeight = 15;
             const followers = creator.follower_count || 0;
-            let followerScore = 0;
-            if (followers > 1000000) followerScore = followerWeight;         // Mega
-            else if (followers > 500000) followerScore = followerWeight * 0.9; // Macro
-            else if (followers > 100000) followerScore = followerWeight * 0.8; // Mid-tier
-            else if (followers > 50000) followerScore = followerWeight * 0.7;  // Micro
-            else if (followers > 10000) followerScore = followerWeight * 0.6;  // Nano+
-            else if (followers >= 1000) followerScore = followerWeight * 0.4;   // Nano
-            // else 0
-            score += followerScore;
-            scoreBreakdown.followers = parseFloat(followerScore.toFixed(2));
+            let followerScoreContribution = 0;
+            if (followers > 1000000) followerScoreContribution = followerWeight;
+            else if (followers > 500000) followerScoreContribution = followerWeight * 0.9;
+            else if (followers > 100000) followerScoreContribution = followerWeight * 0.8;
+            else if (followers > 50000) followerScoreContribution = followerWeight * 0.7;
+            else if (followers > 10000) followerScoreContribution = followerWeight * 0.6;
+            else if (followers >= 1000) followerScoreContribution = followerWeight * 0.4;
+            score += followerScoreContribution;
+            scoreBreakdown.followers_contribution = parseFloat(followerScoreContribution.toFixed(2));
 
             // Client satisfaction (15% weight)
             const satisfactionWeight = 15;
-            const satisfaction = creator.client_satisfaction_score || 0; // Assuming score from 0-5
-            const satisfactionScore = (satisfaction / 5) * satisfactionWeight; // Normalize to weight
-            score += satisfactionScore;
-            scoreBreakdown.satisfaction = parseFloat(satisfactionScore.toFixed(2));
+            const satisfaction = creator.client_satisfaction_score || 0; // Score from 0-5
+            const satisfactionScoreContribution = (satisfaction / 5) * satisfactionWeight;
+            score += satisfactionScoreContribution;
+            scoreBreakdown.satisfaction_contribution = parseFloat(satisfactionScoreContribution.toFixed(2));
 
             // Experience/Collaborations (10% weight)
             const experienceWeight = 10;
             const collaborations = creator.total_collaborations || 0;
-            let experienceScore = 0;
-            if (collaborations > 50) experienceScore = experienceWeight;          // Very Experienced
-            else if (collaborations > 20) experienceScore = experienceWeight * 0.8; // Experienced
-            else if (collaborations > 10) experienceScore = experienceWeight * 0.6; // Moderately Experienced
-            else if (collaborations > 5) experienceScore = experienceWeight * 0.4;  // Some Experience
-            else if (collaborations > 0) experienceScore = experienceWeight * 0.2;  // Limited Experience
-            // else 0
-            score += experienceScore;
-            scoreBreakdown.experience = parseFloat(experienceScore.toFixed(2));
-            
-            // Ensure total score is within 0-100
-            const totalScore = Math.max(0, Math.min(100, Math.round(score * 100) / 100));
+            let experienceScoreContribution = 0;
+            if (collaborations > 50) experienceScoreContribution = experienceWeight;
+            else if (collaborations > 20) experienceScoreContribution = experienceWeight * 0.8;
+            else if (collaborations > 10) experienceScoreContribution = experienceWeight * 0.6;
+            else if (collaborations > 5) experienceScoreContribution = experienceWeight * 0.4;
+            else if (collaborations > 0) experienceScoreContribution = experienceWeight * 0.2;
+            score += experienceScoreContribution;
+            scoreBreakdown.experience_contribution = parseFloat(experienceScoreContribution.toFixed(2));
+
+            const totalScore = Math.max(0, Math.min(100, parseFloat(score.toFixed(2))));
+
 
             return {
-                ...creator,
+                ...creator, // Includes original similarity_score (raw cosine)
                 total_score: totalScore,
                 score_breakdown: scoreBreakdown,
                 price_per_1k_followers: creator.sponsored_post_rate && creator.follower_count && creator.follower_count > 0
-                    ? Math.round((creator.sponsored_post_rate / creator.follower_count) * 1000 * 100) / 100 
+                    ? parseFloat(((creator.sponsored_post_rate / creator.follower_count) * 1000).toFixed(2))
                     : null
             };
         });
 
-        // Sort by total score (descending)
         scoredCreators.sort((a, b) => b.total_score - a.total_score);
-
         return scoredCreators.slice(0, 10); // Return top 10
     }
 
@@ -611,7 +631,7 @@ class AIPromptSearch {
             // The filter clause for json_agg in the original prompt was good too.
             // This alternative uses correlated subqueries which can be cleaner and sometimes more performant for this pattern.
             
-            const result = await pool.query(query, [creatorId]);
+            const result = await pool.pool.query(query, [creatorId]);
             return result.rows[0] || null;
             
         } catch (error) {

@@ -1,7 +1,7 @@
 // routes/creator/creatorRoute.js
 const express = require('express');
 const router = express.Router();
-const CreatorService = require('../../services/aiPromptSearch/aiPromptSearch');
+const CreatorService = require('../../services/aiPromptSearch/aiPromptSearch2');
 const __constants = require('../../config/constants'); // You can customize this or use plain strings
 const validationOfAPI = require('../../middlewares/validation');
 
