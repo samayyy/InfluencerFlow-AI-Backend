@@ -1,0 +1,61 @@
+{
+  "name": "framework",
+  "version": "0.0.1",
+  "description": "framework",
+  "scripts": {
+    "start": "node server.js",
+    "develop": "nodemon server.js",
+    "debug": "nodemon --inspect=9231 server.js",
+    "standard": "standard --fix",
+    "middlewareList": "node fetchListForMiddleware.js"
+  },
+  "nodemonConfig": {
+    "env": {
+      "NODE_ENV": "development"
+    },
+    "watch": [
+      "controllers",
+      "routes"
+    ],
+    "events": {
+      "restart": "user -k 3005/tcp;"
+    },
+    "delay": "1500"
+  },
+  "pre-commit": [
+    "standard"
+  ],
+  "standard": {
+    "ignore": [
+      "/lib/"
+    ]
+  },
+  "devDependencies": {
+    "jsdoc": "^3.6.6",
+    "jsdoc-http-plugin": "^0.3.2",
+    "nodemon": "^2.0.2",
+    "pre-commit": "^1.2.2",
+    "standard": "^14.3.4"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "^8.5.0",
+    "axios": "^1.2.1",
+    "bcrypt": "^5.1.0",
+    "body-parser": "^1.20.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "elastic-apm-node": "^3.41.0",
+    "express": "^4.18.2",
+    "helmet": "^6.0.1",
+    "jsonschema": "^1.4.1",
+    "jsonwebtoken": "^9.0.0",
+    "lodash": "^4.17.21",
+    "moment": "^2.29.4",
+    "mongoose": "^6.8.1",
+    "mongoose-timestamp-plugin": "^0.0.1",
+    "node-vault": "^0.9.22",
+    "passport": "^0.6.0",
+    "passport-jwt": "^4.0.1",
+    "redis": "^3.0.2"
+  }
+}
