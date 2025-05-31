@@ -42,7 +42,8 @@ module.exports = {
     port: process.env.POSTGRES_PORT,
     user: process.env.POSTGRES_USER,
     database: process.env.POSTGRES_DATABASE,
-    password: process.env.POSTGRES_PASSWORD
+    password: process.env.POSTGRES_PASSWORD,
+    ssl: process.env.POSTGRES_SSL === 'true'
   },
   elastic: {
     initUserActivity: process.env.ELASTIC_INIT_USER_ACTIVITY === 'true',
