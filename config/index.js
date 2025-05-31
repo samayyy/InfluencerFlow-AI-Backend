@@ -36,6 +36,14 @@ module.exports = {
     logUncaughtExceptions: process.env.APM_LOG_UNCAUGHT_EXCEPTIONS,
     transactionSampleRate: +process.env.APM_TRANSACTION_SAMPLE_RATE
   },
+  postgres: {
+    init: process.env.POSTGRES_INIT === 'true',
+    host: process.env.POSTGRES_HOST,
+    port: process.env.POSTGRES_PORT,
+    user: process.env.POSTGRES_USER,
+    database: process.env.POSTGRES_DATABASE,
+    password: process.env.POSTGRES_PASSWORD
+  },
   elastic: {
     initUserActivity: process.env.ELASTIC_INIT_USER_ACTIVITY === 'true',
     cloudId: process.env.ELASTIC_CLOUD_ID,

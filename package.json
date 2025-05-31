@@ -56,6 +56,7 @@
     "node-vault": "^0.9.22",
     "passport": "^0.6.0",
     "passport-jwt": "^4.0.1",
+    "pg": "^8.16.0",
     "redis": "^3.0.2"
   }
 }
