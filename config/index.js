@@ -1,6 +1,8 @@
 const __constants = require('./constants')
 const appName = __constants.APP_NAME
 const dbName = __constants.DB_NAME
+const dotenv = require('dotenv');
+dotenv.config({ path: process.env.ENV_FILE || '.env' });
 module.exports = {
   env: process.env.NODE_ENV,
   app_name: appName,

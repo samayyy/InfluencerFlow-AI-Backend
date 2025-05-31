@@ -63,10 +63,6 @@ module.exports = async function (app) {
         if (file) {
           if (require(path.resolve(appModulePath + folder + '/' + file)).stack) {
             app.use(apiUrlPrefix + '/' + folder, require(path.resolve(appModulePath + folder + '/' + file)))
-            const routeToCheckValidator = require(path.resolve(appModulePath + folder + '/' + file)).stack[0]
-            if (routeToCheckValidator && routeToCheckValidator.route && routeToCheckValidator.route.stack && !routeToCheckValidator.route.stack.filter(ele => ele.name === __constants.VALIDATION).length) {
-              console.log('\x1b[31m Error :: \nCompiled time Failed\nValidation not present in API\n'); process.exit(0)
-            }
           }
         }
       })

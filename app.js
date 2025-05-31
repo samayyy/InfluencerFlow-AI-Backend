@@ -28,7 +28,7 @@ class httpApiWorker {
     })
   }
 
-  runExpressServer () {
+  async runExpressServer () {
     console.debug('info inside ~function=runExpressServer.')
     const vm = this
     vm.app = express()
@@ -137,6 +137,9 @@ class httpApiWorker {
     // to avoid issue of monggose schema register which comes if any schema is used in populate before being required anywhere
     const normalizedPath = path.join(__dirname, 'mongooseSchema')
     fs.readdirSync(normalizedPath).forEach(file => { if (file.endsWith('.js')) require(path.join(normalizedPath, file)) })
+
+    const VectorSearchService = require('./services/search/vectorSearchService')
+    await VectorSearchService.initialize()
   }
 }
 
