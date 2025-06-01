@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>InfluencerFlow - Google Login Test</title>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <h1>InfluencerFlow Login Test</h1>
+    
+    <!-- Google Sign-In Button -->
+    <div id="g_id_onload"
+         data-client_id="509297366198-0rr6bk49h3pa424k67c8del6b7ok09d6.apps.googleusercontent.com"
+         data-context="signin"
+         data-ux_mode="popup"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
+    </div>
+    
+    <div class="g_id_signin"
+         data-type="standard"
+         data-shape="rectangular"
+         data-theme="outline"
+         data-text="signin_with"
+         data-size="large"
+         data-logo_alignment="left">
+    </div>
+
+    <script>
+        function handleCredentialResponse(response) {
+            console.log("Encoded JWT ID token: " + response.credential);
+            
+            // Send to your backend
+            fetch('http://localhost:3005/api/auth/google/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    idToken: response.credential,
+                    deviceInfo: {
+                        device_type: 'web',
+                        browser: navigator.userAgent,
+                        os: navigator.platform
+                    }
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Login successful:', data);
+                if (data.type === 'SUCCESS') {
+                    localStorage.setItem('accessToken', data.data.tokens.accessToken);
+                    localStorage.setItem('refreshToken', data.data.tokens.refreshToken);
+                    alert('Login successful!');
+                } else {
+                    alert('Login failed: ' + data.err);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Login error: ' + error.message);
+            });
+        }
+    </script>
+</body>
+</html>
