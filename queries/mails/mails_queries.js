@@ -1,4 +1,3 @@
-// mails_queries.js
 const { pool } = require("../../lib/db/postgres");
 
 const queries = {
@@ -22,22 +21,22 @@ const queries = {
         creator_id, brand_name, creator_name, email,
         deliverables, timeline, platforms, payment_amount,
         docusign_envelope_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING id`,
       [
         creatorId,
-        brandName || "",
-        creatorName || "",
-        email || "",
-        deliverables || "",
-        timeline || "",
-        platforms || "",
-        paymentAmount || "",
+        brandName,
+        creatorName,
+        email,
+        deliverables,
+        timeline,
+        platforms,
+        paymentAmount,
         docusign_envelope_id,
       ]
     );
   },
 
-  /** 👇 Add this function to fetch pending contracts */
   getPendingContracts: async () => {
     const result = await pool.query(
       "SELECT * FROM contracts WHERE status = 'sent' AND docusign_envelope_id IS NOT NULL"

@@ -1,10 +1,7 @@
-// =============================
-// ContractService.js
-// =============================
-
 const { OpenAI } = require("openai");
 const docusign = require("docusign-esign");
 const db = require("../../queries/mails/mails_queries");
+const { pool } = require("../../lib/db/postgres");
 
 class ContractService {
   constructor() {
@@ -22,13 +19,7 @@ class ContractService {
       const html = this.fillContractTemplate(contractData);
       console.log("[generateAndSendContract] Contract HTML template filled");
 
-      const envelope = await this.sendViaDocuSign(
-        { email: contractData.email, name: contractData.creatorName },
-        html
-      );
-      console.log("[generateAndSendContract] Envelope sent via DocuSign:", envelope);
-
-      await db.insertContract({
+      const insertResult = await db.insertContract({
         creatorId,
         brandName: contractData.brandName || "",
         creatorName: contractData.creatorName || "",
@@ -37,9 +28,16 @@ class ContractService {
         timeline: contractData.timeline || "",
         platforms: contractData.platforms || "",
         paymentAmount: contractData.paymentAmount || "",
-        docusign_envelope_id: envelope.envelopeId,
+        docusign_envelope_id: "", // initially empty
       });
-      console.log("[generateAndSendContract] Contract record inserted into DB");
+
+      const contractId = insertResult.rows[0].id;
+      const envelope = await this.sendViaDocuSign(
+        { email: contractData.email, name: contractData.creatorName },
+        html,
+        contractId
+      );
+      console.log("[generateAndSendContract] Envelope sent via DocuSign:", envelope);
 
       return envelope;
     } catch (err) {
@@ -65,20 +63,15 @@ Transcript:
 """${transcript}"""
 `;
 
-    try {
-      const response = await this.openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: [{ role: "user", content: prompt }],
-      });
+    const response = await this.openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [{ role: "user", content: prompt }],
+    });
 
-      console.log("[extractContractDetails] OpenAI response received");
-      const extractedData = this.parseGPTOutput(response.choices[0].message.content);
-      console.log("[extractContractDetails] Parsed GPT output:", extractedData);
-      return extractedData;
-    } catch (err) {
-      console.error("[extractContractDetails] Error calling OpenAI:", err);
-      throw err;
-    }
+    console.log("[extractContractDetails] OpenAI response received");
+    const extractedData = this.parseGPTOutput(response.choices[0].message.content);
+    console.log("[extractContractDetails] Parsed GPT output:", extractedData);
+    return extractedData;
   }
 
   parseGPTOutput(text) {
@@ -133,7 +126,7 @@ Transcript:
     `;
   }
 
-async getDocuSignAuth() {
+  async getDocuSignAuth() {
     const results = await this.docusignClient.requestJWTUserToken(
       process.env.DOCUSIGN_CLIENT_ID,
       process.env.DOCUSIGN_USER_ID,
@@ -155,12 +148,8 @@ async getDocuSignAuth() {
 
   async sendViaDocuSign(recipient, html, contractId) {
     console.log('[sendViaDocuSign] Sending to:', recipient);
-
     const { accountId } = await this.getDocuSignAuth();
     const envelopesApi = new docusign.EnvelopesApi(this.docusignClient);
-
-    const envelopeDefinition = new docusign.EnvelopeDefinition();
-    envelopeDefinition.emailSubject = 'Please sign your creator contract';
 
     const documentBase64 = Buffer.from(html).toString('base64');
     const document = docusign.Document.constructFromObject({
@@ -187,21 +176,10 @@ async getDocuSignAuth() {
       }),
     });
 
-    const eventNotification = docusign.EventNotification.constructFromObject({
-      url: process.env.DOCUSIGN_WEBHOOK_URL, // Your webhook URL here
-      loggingEnabled: true,
-      requireAcknowledgment: true,
-      useSoapInterface: false,
-      includeCertificateWithSoap: false,
-      envelopeEvents: [
-        { envelopeEventStatusCode: 'completed', includeDocuments: false },
-        { envelopeEventStatusCode: 'declined', includeDocuments: false },
-      ],
-    });
-
+    const envelopeDefinition = new docusign.EnvelopeDefinition();
+    envelopeDefinition.emailSubject = 'Please sign your creator contract';
     envelopeDefinition.documents = [document];
     envelopeDefinition.recipients = docusign.Recipients.constructFromObject({ signers: [signer] });
-    envelopeDefinition.eventNotification = eventNotification;
     envelopeDefinition.status = 'sent';
 
     const envelopeSummary = await envelopesApi.createEnvelope(accountId, {

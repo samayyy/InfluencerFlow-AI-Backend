@@ -25,7 +25,7 @@ const generateAndSendContract = async (req, res) => {
   try {
     const { creatorId, transcript } = req.body;
 
-const creatorRes = await creatorsQueries.getAllCreators(creatorId);
+    const creatorRes = await creatorsQueries.getAllCreators(creatorId);
 
     if (!creatorRes.rows.length) {
       return res.sendJson({
