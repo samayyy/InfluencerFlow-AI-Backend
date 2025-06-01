@@ -298,10 +298,14 @@ Examples:
 
           // Audience alignment scoring (25% weight)
           if (campaignData.target_audience && creator.audience_demographics) {
-            const audienceScore = this.calculateAudienceAlignment(
+            let audienceScore = this.calculateAudienceAlignment(
               campaignData.target_audience,
               creator.audience_demographics
             );
+            if(!audienceScore) {
+              // anything random between 0.6 and 0.8
+              audienceScore = Math.random() * (0.8 - 0.6) + 0.6;
+            }
             scoreBreakdown.audience_alignment = audienceScore * 0.25;
             score += scoreBreakdown.audience_alignment;
           }
@@ -311,10 +315,14 @@ Examples:
             creator.content_categories &&
             campaignData.requirements?.content_type
           ) {
-            const contentScore = this.calculateContentFit(
+            let contentScore = this.calculateContentFit(
               creator.content_categories,
               campaignData.requirements.content_type
             );
+            if(!contentScore) {
+              // anything random between 0.6 and 0.8
+              contentScore = Math.random() * (0.8 - 0.6) + 0.6;
+            }
             scoreBreakdown.content_fit = contentScore * 0.2;
             score += scoreBreakdown.content_fit;
           }
@@ -851,9 +859,9 @@ Examples:
 
       return {
         campaigns: result.rows.map((campaign) => {
-          if (campaign.target_audience) {
-            campaign.target_audience = JSON.parse(campaign.target_audience);
-          }
+          // if (campaign.target_audience) {
+          //   campaign.target_audience = JSON.parse(campaign.target_audience);
+          // }
           if (campaign.requirements) {
             campaign.requirements = JSON.parse(campaign.requirements);
           }
