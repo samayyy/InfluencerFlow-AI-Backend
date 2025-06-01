@@ -10,7 +10,12 @@
     "middlewareList": "node fetchListForMiddleware.js",
     "setup-ai-search": "node scripts/setupAISearch.js",
     "migrate-embeddings": "node scripts/migrateEmbeddings.js",
+<<<<<<< Updated upstream
     "run-migrations": "node scripts/runMigrations.js"
+=======
+    "migrate:calls": "node migrations/runCallMigration.js",
+    "test:calling": "curl -X GET http://localhost:3005/api/calling/health"
+>>>>>>> Stashed changes
   },
   "nodemonConfig": {
     "env": {
@@ -62,6 +67,7 @@
     "moment": "^2.29.4",
     "mongoose": "^6.8.1",
     "mongoose-timestamp-plugin": "^0.0.1",
+    "ngrok": "^5.0.0-beta.2",
     "node-vault": "^0.9.22",
     "nodemailer": "^7.0.3",
     "openai": "^4.104.0",
@@ -69,6 +75,10 @@
     "passport-jwt": "^4.0.1",
     "pg": "^8.16.0",
     "redis": "^3.0.2",
+<<<<<<< Updated upstream
     "twilio": "^5.7.0"
+=======
+    "twilio": "^4.23.0"
+>>>>>>> Stashed changes
   }
 }

@@ -1,0 +1,564 @@
+// controllers/calling/calls.js
+const express = require("express");
+const router = express.Router();
+const __constants = require("../../config/constants");
+const validationOfAPI = require("../../middlewares/validation");
+const callService = require("../../services/calling/callService");
+const twilioService = require("../../services/calling/twilioService");
+const elevenLabsService = require("../../services/calling/elevenLabsService");
+
+/**
+ * @namespace -CALLING-MODULE-
+ * @description API's for initiating and managing calls with ElevenLabs AI agents
+ */
+
+/**
+ * @memberof -CALLING-module-
+ * @name initiateCall
+ * @path {POST} /api/calling/initiate
+ * @description Initiate an outbound call to a creator
+ */
+
+const initiateCallValidationSchema = {
+  type: "object",
+  required: true,
+  properties: {
+    creator_id: { type: "string", required: true },
+    phone_number: { type: "string", required: true },
+    agent_id: { type: "string", required: false },
+    custom_message: { type: "string", required: false },
+    notes: { type: "string", required: false }
+  },
+};
+
+const initiateCallValidation = (req, res, next) => {
+  return validationOfAPI(req, res, next, initiateCallValidationSchema, "body");
+};
+
+const initiateCall = async (req, res) => {
+  try {
+    const {
+      creator_id,
+      phone_number,
+      agent_id,
+      custom_message,
+      notes
+    } = req.body;
+
+    console.log(`🚀 Initiating call to creator ${creator_id} at ${phone_number}`);
+
+    // Validate phone number format
+    try {
+      twilioService.validatePhoneNumber(phone_number);
+    } catch (error) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
+        err: [`Invalid phone number format: ${error.message}`]
+      });
+    }
+
+    // Check if agent exists (if provided)
+    if (agent_id) {
+      try {
+        await elevenLabsService.getAgent(agent_id);
+      } catch (error) {
+        return res.sendJson({
+          type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
+          err: [`Invalid ElevenLabs agent ID: ${error.message}`]
+        });
+      }
+    }
+
+    // Initiate the call
+    const result = await callService.initiateCall({
+      creatorId: creator_id,
+      phoneNumber: phone_number,
+      agentId: agent_id,
+      customMessage: custom_message,
+      notes: notes,
+      initiatedByUserId: req.user?.id || null // If you have user auth
+    });
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: {
+        message: "Call initiated successfully",
+        call_details: result,
+        estimated_cost: "$0.02-0.05 per minute",
+        next_steps: [
+          "Monitor call status via webhooks",
+          "Check call details using call ID",
+          "Review conversation insights after completion"
+        ]
+      }
+    });
+
+  } catch (err) {
+    console.error("Error initiating call:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name getCallDetails
+ * @path {GET} /api/calling/calls/:callId
+ * @description Get detailed information about a specific call
+ */
+
+const callIdValidationSchema = {
+  type: "object",
+  required: true,
+  properties: {
+    callId: { type: "string", required: true },
+  },
+};
+
+const callIdValidation = (req, res, next) => {
+  return validationOfAPI(req, res, next, callIdValidationSchema, "params");
+};
+
+const getCallDetails = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    const call = await callService.getCallById(callId);
+
+    if (!call) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
+        err: [`Call with ID ${callId} not found`]
+      });
+    }
+
+    // Get additional Twilio details if available
+    let twilioDetails = null;
+    if (call.call_sid) {
+      try {
+        twilioDetails = await twilioService.getCallDetails(call.call_sid);
+      } catch (error) {
+        console.warn('Could not fetch Twilio details:', error.message);
+      }
+    }
+
+    // Get ElevenLabs conversation details if available
+    let conversationDetails = null;
+    if (call.elevenlabs_conversation_id) {
+      try {
+        conversationDetails = await elevenLabsService.getConversation(call.elevenlabs_conversation_id);
+      } catch (error) {
+        console.warn('Could not fetch ElevenLabs conversation:', error.message);
+      }
+    }
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: {
+        call: call,
+        twilio_details: twilioDetails,
+        conversation_details: conversationDetails,
+        insights: {
+          call_outcome: call.call_outcome,
+          sentiment_score: call.sentiment_score,
+          follow_up_required: call.follow_up_required,
+          key_topics: call.key_topics
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Error getting call details:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name getAllCalls
+ * @path {GET} /api/calling/calls
+ * @description Get list of calls with filtering and pagination
+ */
+
+const getCallsValidationSchema = {
+  type: "object",
+  required: false,
+  properties: {
+    page: { type: "string", required: false },
+    limit: { type: "string", required: false },
+    creator_id: { type: "string", required: false },
+    status: { type: "string", required: false },
+    outcome: { type: "string", required: false },
+    start_date: { type: "string", required: false },
+    end_date: { type: "string", required: false }
+  },
+};
+
+const getCallsValidation = (req, res, next) => {
+  return validationOfAPI(req, res, next, getCallsValidationSchema, "query");
+};
+
+const getAllCalls = async (req, res) => {
+  try {
+    const filters = {};
+    const pagination = {};
+
+    // Extract filters
+    if (req.query.creator_id) filters.creatorId = req.query.creator_id;
+    if (req.query.status) filters.status = req.query.status;
+    if (req.query.outcome) filters.outcome = req.query.outcome;
+    if (req.query.start_date) filters.startDate = req.query.start_date;
+    if (req.query.end_date) filters.endDate = req.query.end_date;
+
+    // Extract pagination
+    if (req.query.page) pagination.page = parseInt(req.query.page);
+    if (req.query.limit) pagination.limit = parseInt(req.query.limit);
+
+    const result = await callService.getCalls(filters, pagination);
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: {
+        calls: result.calls,
+        pagination: result.pagination,
+        filters_applied: filters
+      }
+    });
+
+  } catch (err) {
+    console.error("Error getting calls:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name terminateCall
+ * @path {POST} /api/calling/calls/:callId/terminate
+ * @description Terminate an active call
+ */
+
+const terminateCall = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    const result = await callService.terminateCall(callId);
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: result
+    });
+
+  } catch (err) {
+    console.error("Error terminating call:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name getCallRecordings
+ * @path {GET} /api/calling/calls/:callId/recordings
+ * @description Get recordings for a specific call
+ */
+
+const getCallRecordings = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    const recordings = await callService.getCallRecordings(callId);
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: recordings
+    });
+
+  } catch (err) {
+    console.error("Error getting call recordings:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name getCallAnalytics
+ * @path {GET} /api/calling/analytics
+ * @description Get call analytics and performance metrics
+ */
+
+const analyticsValidationSchema = {
+  type: "object",
+  required: false,
+  properties: {
+    start_date: { type: "string", required: false },
+    end_date: { type: "string", required: false },
+    creator_id: { type: "string", required: false }
+  },
+};
+
+const analyticsValidation = (req, res, next) => {
+  return validationOfAPI(req, res, next, analyticsValidationSchema, "query");
+};
+
+const getCallAnalytics = async (req, res) => {
+  try {
+    const filters = {};
+
+    if (req.query.start_date) filters.startDate = req.query.start_date;
+    if (req.query.end_date) filters.endDate = req.query.end_date;
+    if (req.query.creator_id) filters.creatorId = req.query.creator_id;
+
+    const analytics = await callService.getCallAnalytics(filters);
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: {
+        analytics: analytics,
+        filters_applied: filters,
+        generated_at: new Date().toISOString()
+      }
+    });
+
+  } catch (err) {
+    console.error("Error getting call analytics:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name getConversationInsights
+ * @path {GET} /api/calling/calls/:callId/insights
+ * @description Get AI conversation insights for a completed call
+ */
+
+const getConversationInsights = async (req, res) => {
+  try {
+    const { callId } = req.params;
+
+    const call = await callService.getCallById(callId);
+
+    if (!call) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
+        err: [`Call with ID ${callId} not found`]
+      });
+    }
+
+    if (!call.elevenlabs_conversation_id) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
+        data: {
+          message: "No conversation data available for this call",
+          call_status: call.status,
+          call_outcome: call.call_outcome
+        }
+      });
+    }
+
+    // Get detailed conversation analysis
+    const insights = await elevenLabsService.analyzeConversation(call.elevenlabs_conversation_id);
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: {
+        call_id: callId,
+        conversation_id: call.elevenlabs_conversation_id,
+        insights: insights,
+        call_summary: {
+          duration_seconds: call.duration_seconds,
+          status: call.status,
+          outcome: call.call_outcome,
+          cost_usd: call.cost_usd
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Error getting conversation insights:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name healthCheck
+ * @path {GET} /api/calling/health
+ * @description Health check for the calling system
+ */
+
+const healthCheck = async (req, res) => {
+  try {
+    const health = await callService.healthCheck();
+
+    const responseType = health.status === 'healthy' 
+      ? __constants.RESPONSE_MESSAGES.SUCCESS 
+      : __constants.RESPONSE_MESSAGES.FAILED;
+
+    res.sendJson({
+      type: responseType,
+      data: health
+    });
+
+  } catch (err) {
+    console.error("Error in calling health check:", err);
+    return res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name getElevenLabsAgents
+ * @path {GET} /api/calling/agents
+ * @description Get available ElevenLabs AI agents
+ */
+
+const getElevenLabsAgents = async (req, res) => {
+  try {
+    const agents = await elevenLabsService.getAgents();
+
+    res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SUCCESS,
+      data: {
+        agents: agents,
+        default_agent_id: process.env.ELEVENLABS_AGENT_ID,
+        total_agents: agents?.length || 0
+      }
+    });
+
+  } catch (err) {
+    console.error("Error getting ElevenLabs agents:", err);
+    return res.sendJson({
+      type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+/**
+ * @memberof -CALLING-module-
+ * @name testCallSetup
+ * @path {POST} /api/calling/test
+ * @description Test call system setup without making actual call
+ */
+
+const testCallSetup = async (req, res) => {
+  try {
+    const { phone_number, agent_id } = req.body;
+
+    const tests = {
+      phone_validation: false,
+      twilio_connection: false,
+      elevenlabs_connection: false,
+      agent_validation: false,
+      database_connection: false
+    };
+
+    const results = [];
+
+    // Test phone number validation
+    try {
+      const validatedNumber = twilioService.validatePhoneNumber(phone_number || '+1234567890');
+      tests.phone_validation = true;
+      results.push(`✅ Phone validation: ${validatedNumber}`);
+    } catch (error) {
+      results.push(`❌ Phone validation failed: ${error.message}`);
+    }
+
+    // Test Twilio connection
+    try {
+      const twilioHealth = await twilioService.healthCheck();
+      tests.twilio_connection = twilioHealth.status === 'healthy';
+      results.push(`✅ Twilio: ${twilioHealth.status}`);
+    } catch (error) {
+      results.push(`❌ Twilio connection failed: ${error.message}`);
+    }
+
+    // Test ElevenLabs connection
+    try {
+      const elevenLabsHealth = await elevenLabsService.healthCheck();
+      tests.elevenlabs_connection = elevenLabsHealth.status === 'healthy';
+      results.push(`✅ ElevenLabs: ${elevenLabsHealth.status}`);
+    } catch (error) {
+      results.push(`❌ ElevenLabs connection failed: ${error.message}`);
+    }
+
+    // Test agent validation
+    if (agent_id) {
+      try {
+        await elevenLabsService.getAgent(agent_id);
+        tests.agent_validation = true;
+        results.push(`✅ Agent validation: ${agent_id}`);
+      } catch (error) {
+        results.push(`❌ Agent validation failed: ${error.message}`);
+      }
+    }
+
+    // Test database connection
+    try {
+      const dbHealth = await callService.healthCheck();
+      tests.database_connection = dbHealth.status === 'healthy';
+      results.push(`✅ Database: ${dbHealth.status}`);
+    } catch (error) {
+      results.push(`❌ Database connection failed: ${error.message}`);
+    }
+
+    const allTestsPassed = Object.values(tests).every(test => test === true);
+
+    res.sendJson({
+      type: allTestsPassed ? __constants.RESPONSE_MESSAGES.SUCCESS : __constants.RESPONSE_MESSAGES.FAILED,
+      data: {
+        system_ready: allTestsPassed,
+        test_results: tests,
+        details: results,
+        next_steps: allTestsPassed 
+          ? ["System ready for calls", "Use /api/calling/initiate to make calls"]
+          : ["Fix failed components", "Run test again"]
+      }
+    });
+
+  } catch (err) {
+    console.error("Error in test setup:", err);
+    return res.sendJson({
+      type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+      err: err.message || err,
+    });
+  }
+};
+
+// Route definitions
+router.post("/initiate", initiateCallValidation, initiateCall);
+router.get("/calls/:callId", callIdValidation, getCallDetails);
+router.get("/calls", getCallsValidation, getAllCalls);
+router.post("/calls/:callId/terminate", callIdValidation, terminateCall);
+router.get("/calls/:callId/recordings", callIdValidation, getCallRecordings);
+router.get("/calls/:callId/insights", callIdValidation, getConversationInsights);
+router.get("/analytics", analyticsValidation, getCallAnalytics);
+router.get("/agents", getElevenLabsAgents);
+router.get("/health", healthCheck);
+router.post("/test", testCallSetup);
+
+module.exports = router;
