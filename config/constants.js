@@ -48,18 +48,38 @@ const USER_ACTIVITY_LOGS = 'useractivitylogs'
 const V1 = 'v1'
 const ARRAY_OF_MEDIUM = ['body', 'params', 'query']
 
-module.exports.RESPONSE_MESSAGES = require('../responses/api-responses')
-module.exports.CUSTOM_CONSTANT = CUSTOM_CONSTANT
-module.exports.PUBLIC_FOLDER_PATH = PUBLIC_FOLDER_PATH
-module.exports.APP_NAME = APP_NAME
-module.exports.DB_NAME = DB_NAME
-module.exports.SERVER_TIMEOUT = SERVER_TIMEOUT
-module.exports.VALIDATION = VALIDATION
-module.exports.VALIDATOR = VALIDATOR
-module.exports.SESSION_TIME_OUT = SESSION_TIME_OUT
-module.exports.REDIS_EXPIRY_TIME = REDIS_EXPIRY_TIME
-module.exports.SALT_ROUNDS = SALT_ROUNDS
-module.exports.EXPIRY_OF_CACHE = EXPIRY_OF_CACHE
-module.exports.USER_ACTIVITY_LOGS = USER_ACTIVITY_LOGS
-module.exports.V1 = V1
-module.exports.ARRAY_OF_MEDIUM = ARRAY_OF_MEDIUM
+const RAZORPAY_CONFIG = {
+  BASE_URL: 'https://api.razorpay.com/v1',
+  TRANSFER_MODES: ['IMPS', 'NEFT', 'RTGS', 'UPI'],
+  ACCOUNT_TYPES: ['bank_account', 'vpa', 'card', 'wallet'],
+  CONTACT_TYPES: ['vendor', 'customer', 'employee'],
+  PURPOSES: ['refund', 'cashback', 'payout', 'salary', 'utility_bill', 'vendor_bill'],
+  PAYOUT_STATUSES: ['queued', 'rejected', 'processing', 'processed', 'cancelled', 'reversed']
+}
+
+const MOCK_CONFIG = {
+  USE_MOCK: process.env.USE_MOCK_RAZORPAY === 'true' || process.env.NODE_ENV === 'development',
+  MOCK_DELAY: 1000, // Simulate API delay
+  FAILURE_RATE: 0.1, // 10% failure rate for testing
+  MOCK_ACCOUNT_NUMBER: '2323230072281147'
+}
+
+module.exports = {
+  RESPONSE_MESSAGES: require('../responses/api-responses'),
+  CUSTOM_CONSTANT,
+  PUBLIC_FOLDER_PATH,
+  APP_NAME,
+  DB_NAME,
+  SERVER_TIMEOUT,
+  VALIDATION,
+  VALIDATOR,
+  SESSION_TIME_OUT,
+  REDIS_EXPIRY_TIME,
+  SALT_ROUNDS,
+  EXPIRY_OF_CACHE,
+  USER_ACTIVITY_LOGS,
+  V1,
+  ARRAY_OF_MEDIUM,
+  RAZORPAY_CONFIG,
+  MOCK_CONFIG
+}

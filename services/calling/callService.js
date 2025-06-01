@@ -1,27 +1,27 @@
 // services/calling/callService.js
-const { Pool } = require("pg");
-const __config = require("../../config");
-const twilioService = require("./twilioService");
-const elevenLabsService = require("./elevenLabsService");
+const { Pool } = require('pg')
+const __config = require('../../config')
+const twilioService = require('./twilioService')
+const elevenLabsService = require('./elevenLabsService')
 
 class CallService {
-  constructor() {
+  constructor () {
     this.pool = new Pool({
       user: __config.postgres.user,
       host: __config.postgres.host,
       database: __config.postgres.database,
       password: __config.postgres.password,
       port: __config.postgres.port,
-      ssl: { rejectUnauthorized: false },
-    });
+      ssl: { rejectUnauthorized: false }
+    })
   }
 
   // Initiate a new call to a creator
-  async initiateCall(callData) {
-    const client = await this.pool.connect();
-    
+  async initiateCall (callData) {
+    const client = await this.pool.connect()
+
     try {
-      await client.query("BEGIN");
+      await client.query('BEGIN')
 
       const {
         creatorId,
@@ -30,22 +30,22 @@ class CallService {
         customMessage,
         notes,
         initiatedByUserId
-      } = callData;
+      } = callData
 
       // Validate required fields
       if (!creatorId || !phoneNumber) {
-        throw new Error('Creator ID and phone number are required');
+        throw new Error('Creator ID and phone number are required')
       }
 
       // Check if creator exists
-      const creatorQuery = 'SELECT id, creator_name FROM creators WHERE id = $1';
-      const creatorResult = await client.query(creatorQuery, [creatorId]);
-      
+      const creatorQuery = 'SELECT id, creator_name FROM creators WHERE id = $1'
+      const creatorResult = await client.query(creatorQuery, [creatorId])
+
       if (creatorResult.rows.length === 0) {
-        throw new Error(`Creator with ID ${creatorId} not found`);
+        throw new Error(`Creator with ID ${creatorId} not found`)
       }
 
-      const creator = creatorResult.rows[0];
+      const creator = creatorResult.rows[0]
 
       // Create call record
       const insertCallQuery = `
@@ -54,7 +54,7 @@ class CallService {
           notes, initiated_by_user_id
         ) VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id, created_at
-      `;
+      `
 
       const callResult = await client.query(insertCallQuery, [
         creatorId,
@@ -63,16 +63,16 @@ class CallService {
         process.env.TWILIO_PHONE_NUMBER,
         notes || `Outbound call to ${creator.creator_name}`,
         initiatedByUserId
-      ]);
+      ])
 
-      const callId = callResult.rows[0].id;
-      
+      const callId = callResult.rows[0].id
+
       // Log initial event
       await this.logCallEvent(client, callId, 'initiated', {
         creator_name: creator.creator_name,
         phone_number: phoneNumber,
         agent_id: agentId || 'default'
-      });
+      })
 
       // Initiate Twilio call
       const twilioResponse = await twilioService.initiateCall(phoneNumber, {
@@ -82,17 +82,17 @@ class CallService {
         customMessage,
         timeout: 30,
         recordCall: true
-      });
+      })
 
       // Update call with Twilio SID
       await client.query(
         'UPDATE calls SET call_sid = $1 WHERE id = $2',
         [twilioResponse.callSid, callId]
-      );
+      )
 
-      await client.query("COMMIT");
+      await client.query('COMMIT')
 
-      console.log(`✅ Call initiated: ID ${callId}, SID ${twilioResponse.callSid}`);
+      console.log(`✅ Call initiated: ID ${callId}, SID ${twilioResponse.callSid}`)
 
       return {
         success: true,
@@ -102,53 +102,52 @@ class CallService {
         message: `Call initiated to ${creator.creator_name}`,
         creatorName: creator.creator_name,
         phoneNumber: phoneNumber
-      };
-
+      }
     } catch (error) {
-      await client.query("ROLLBACK");
-      console.error('Error initiating call:', error);
-      throw error;
+      await client.query('ROLLBACK')
+      console.error('Error initiating call:', error)
+      throw error
     } finally {
-      client.release();
+      client.release()
     }
   }
 
   // Update call status
-  async updateCallStatus(callSid, status, additionalData = {}) {
-    const client = await this.pool.connect();
-    
+  async updateCallStatus (callSid, status, additionalData = {}) {
+    const client = await this.pool.connect()
+
     try {
       // Get call details from Twilio
-      let twilioCallDetails = null;
+      let twilioCallDetails = null
       try {
-        twilioCallDetails = await twilioService.getCallDetails(callSid);
+        twilioCallDetails = await twilioService.getCallDetails(callSid)
       } catch (error) {
-        console.warn('Could not fetch Twilio call details:', error.message);
+        console.warn('Could not fetch Twilio call details:', error.message)
       }
 
       // Update call record
-      const updateFields = ['status = $2', 'updated_at = NOW()'];
-      const values = [callSid, status];
-      let paramIndex = 3;
+      const updateFields = ['status = $2', 'updated_at = NOW()']
+      const values = [callSid, status]
+      let paramIndex = 3
 
       if (twilioCallDetails) {
         if (twilioCallDetails.duration) {
-          updateFields.push(`duration_seconds = $${paramIndex}`);
-          values.push(parseInt(twilioCallDetails.duration));
-          paramIndex++;
+          updateFields.push(`duration_seconds = $${paramIndex}`)
+          values.push(parseInt(twilioCallDetails.duration))
+          paramIndex++
         }
 
         if (twilioCallDetails.price) {
-          updateFields.push(`cost_usd = $${paramIndex}`);
-          values.push(parseFloat(twilioCallDetails.price));
-          paramIndex++;
+          updateFields.push(`cost_usd = $${paramIndex}`)
+          values.push(parseFloat(twilioCallDetails.price))
+          paramIndex++
         }
       }
 
       if (additionalData.outcome) {
-        updateFields.push(`call_outcome = $${paramIndex}`);
-        values.push(additionalData.outcome);
-        paramIndex++;
+        updateFields.push(`call_outcome = $${paramIndex}`)
+        values.push(additionalData.outcome)
+        paramIndex++
       }
 
       const updateQuery = `
@@ -156,28 +155,28 @@ class CallService {
         SET ${updateFields.join(', ')}
         WHERE call_sid = $1
         RETURNING id, creator_id
-      `;
+      `
 
-      const result = await client.query(updateQuery, values);
-      
+      const result = await client.query(updateQuery, values)
+
       if (result.rows.length === 0) {
-        throw new Error(`Call with SID ${callSid} not found`);
+        throw new Error(`Call with SID ${callSid} not found`)
       }
 
-      const callId = result.rows[0].id;
+      const callId = result.rows[0].id
 
       // Log status change event
       await this.logCallEvent(client, callId, status, {
         twilio_data: twilioCallDetails,
         ...additionalData
-      });
+      })
 
       // If call completed, get conversation insights
       if (status === 'completed' && additionalData.elevenlabsConversationId) {
         try {
-          await this.processCallCompletion(client, callId, additionalData.elevenlabsConversationId);
+          await this.processCallCompletion(client, callId, additionalData.elevenlabsConversationId)
         } catch (error) {
-          console.error('Error processing call completion:', error);
+          console.error('Error processing call completion:', error)
           // Don't fail the status update if insights fail
         }
       }
@@ -187,21 +186,20 @@ class CallService {
         callId: callId,
         status: status,
         twilioData: twilioCallDetails
-      };
-
+      }
     } catch (error) {
-      console.error('Error updating call status:', error);
-      throw error;
+      console.error('Error updating call status:', error)
+      throw error
     } finally {
-      client.release();
+      client.release()
     }
   }
 
   // Process call completion and gather insights
-  async processCallCompletion(client, callId, conversationId) {
+  async processCallCompletion (client, callId, conversationId) {
     try {
       // Get conversation analysis from ElevenLabs
-      const analysis = await elevenLabsService.analyzeConversation(conversationId);
+      const analysis = await elevenLabsService.analyzeConversation(conversationId)
 
       // Update call with conversation summary
       await client.query(
@@ -209,7 +207,7 @@ class CallService {
          SET conversation_summary = $1, elevenlabs_conversation_id = $2 
          WHERE id = $3`,
         [analysis.summary, conversationId, callId]
-      );
+      )
 
       // Insert analytics data
       const analyticsQuery = `
@@ -218,19 +216,19 @@ class CallService {
           conversation_quality_score, key_topics, 
           follow_up_required, next_action
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `;
+      `
 
-      const sentimentScore = analysis.sentiment === 'positive' ? 0.7 : 
-                            analysis.sentiment === 'negative' ? -0.3 : 0;
+      const sentimentScore = analysis.sentiment === 'positive' ? 0.7
+        : analysis.sentiment === 'negative' ? -0.3 : 0
 
-      const qualityScore = analysis.analysis?.customerEngagement 
-        ? analysis.analysis.customerEngagement / 10 
-        : 0.5;
+      const qualityScore = analysis.analysis?.customerEngagement
+        ? analysis.analysis.customerEngagement / 10
+        : 0.5
 
-      const followUpRequired = sentimentScore > 0.3 || 
-                              analysis.topics.includes('collaboration');
+      const followUpRequired = sentimentScore > 0.3 ||
+                              analysis.topics.includes('collaboration')
 
-      const nextAction = followUpRequired ? 'schedule_follow_up' : 'no_action_needed';
+      const nextAction = followUpRequired ? 'schedule_follow_up' : 'no_action_needed'
 
       await client.query(analyticsQuery, [
         callId,
@@ -240,33 +238,32 @@ class CallService {
         analysis.topics || [],
         followUpRequired,
         nextAction
-      ]);
+      ])
 
-      console.log(`✅ Call completion processed for call ID: ${callId}`);
-
+      console.log(`✅ Call completion processed for call ID: ${callId}`)
     } catch (error) {
-      console.error('Error processing call completion:', error);
-      throw error;
+      console.error('Error processing call completion:', error)
+      throw error
     }
   }
 
   // Log call events
-  async logCallEvent(client, callId, eventType, eventData = {}) {
+  async logCallEvent (client, callId, eventType, eventData = {}) {
     try {
       const query = `
         INSERT INTO call_events (call_id, event_type, event_data, timestamp)
         VALUES ($1, $2, $3, NOW())
-      `;
+      `
 
-      await client.query(query, [callId, eventType, eventData]);
+      await client.query(query, [callId, eventType, eventData])
     } catch (error) {
-      console.error('Error logging call event:', error);
+      console.error('Error logging call event:', error)
       // Don't throw - event logging shouldn't break main flow
     }
   }
 
   // Get call details by ID
-  async getCallById(callId) {
+  async getCallById (callId) {
     try {
       const query = `
         SELECT 
@@ -281,15 +278,15 @@ class CallService {
         LEFT JOIN creators cr ON c.creator_id = cr.id
         LEFT JOIN call_analytics ca ON c.id = ca.call_id
         WHERE c.id = $1
-      `;
+      `
 
-      const result = await this.pool.query(query, [callId]);
-      
+      const result = await this.pool.query(query, [callId])
+
       if (result.rows.length === 0) {
-        return null;
+        return null
       }
 
-      const call = result.rows[0];
+      const call = result.rows[0]
 
       // Get call events
       const eventsQuery = `
@@ -297,58 +294,57 @@ class CallService {
         FROM call_events 
         WHERE call_id = $1 
         ORDER BY timestamp ASC
-      `;
+      `
 
-      const eventsResult = await this.pool.query(eventsQuery, [callId]);
-      call.events = eventsResult.rows;
+      const eventsResult = await this.pool.query(eventsQuery, [callId])
+      call.events = eventsResult.rows
 
-      return call;
-
+      return call
     } catch (error) {
-      console.error('Error fetching call details:', error);
-      throw error;
+      console.error('Error fetching call details:', error)
+      throw error
     }
   }
 
   // Get calls with filtering and pagination
-  async getCalls(filters = {}, pagination = {}) {
+  async getCalls (filters = {}, pagination = {}) {
     try {
-      const { page = 1, limit = 20 } = pagination;
-      const offset = (page - 1) * limit;
+      const { page = 1, limit = 20 } = pagination
+      const offset = (page - 1) * limit
 
-      let whereClause = "WHERE 1=1";
-      const values = [];
-      let paramCount = 0;
+      let whereClause = 'WHERE 1=1'
+      const values = []
+      let paramCount = 0
 
       // Build filters
       if (filters.creatorId) {
-        paramCount++;
-        whereClause += ` AND c.creator_id = $${paramCount}`;
-        values.push(filters.creatorId);
+        paramCount++
+        whereClause += ` AND c.creator_id = $${paramCount}`
+        values.push(filters.creatorId)
       }
 
       if (filters.status) {
-        paramCount++;
-        whereClause += ` AND c.status = $${paramCount}`;
-        values.push(filters.status);
+        paramCount++
+        whereClause += ` AND c.status = $${paramCount}`
+        values.push(filters.status)
       }
 
       if (filters.outcome) {
-        paramCount++;
-        whereClause += ` AND c.call_outcome = $${paramCount}`;
-        values.push(filters.outcome);
+        paramCount++
+        whereClause += ` AND c.call_outcome = $${paramCount}`
+        values.push(filters.outcome)
       }
 
       if (filters.startDate) {
-        paramCount++;
-        whereClause += ` AND c.created_at >= $${paramCount}`;
-        values.push(filters.startDate);
+        paramCount++
+        whereClause += ` AND c.created_at >= $${paramCount}`
+        values.push(filters.startDate)
       }
 
       if (filters.endDate) {
-        paramCount++;
-        whereClause += ` AND c.created_at <= $${paramCount}`;
-        values.push(filters.endDate);
+        paramCount++
+        whereClause += ` AND c.created_at <= $${paramCount}`
+        values.push(filters.endDate)
       }
 
       const query = `
@@ -364,21 +360,21 @@ class CallService {
         ${whereClause}
         ORDER BY c.created_at DESC
         LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-      `;
+      `
 
-      values.push(limit, offset);
+      values.push(limit, offset)
 
-      const result = await this.pool.query(query, values);
+      const result = await this.pool.query(query, values)
 
       // Get total count
       const countQuery = `
         SELECT COUNT(*) as total
         FROM calls c
         ${whereClause}
-      `;
+      `
 
-      const countResult = await this.pool.query(countQuery, values.slice(0, -2));
-      const total = parseInt(countResult.rows[0].total);
+      const countResult = await this.pool.query(countQuery, values.slice(0, -2))
+      const total = parseInt(countResult.rows[0].total)
 
       return {
         calls: result.rows,
@@ -386,33 +382,32 @@ class CallService {
           page: parseInt(page),
           limit: parseInt(limit),
           total,
-          pages: Math.ceil(total / limit),
-        },
-      };
-
+          pages: Math.ceil(total / limit)
+        }
+      }
     } catch (error) {
-      console.error('Error fetching calls:', error);
-      throw error;
+      console.error('Error fetching calls:', error)
+      throw error
     }
   }
 
   // Get call analytics/statistics
-  async getCallAnalytics(filters = {}) {
+  async getCallAnalytics (filters = {}) {
     try {
-      let whereClause = "WHERE 1=1";
-      const values = [];
-      let paramCount = 0;
+      let whereClause = 'WHERE 1=1'
+      const values = []
+      let paramCount = 0
 
       if (filters.startDate) {
-        paramCount++;
-        whereClause += ` AND c.created_at >= $${paramCount}`;
-        values.push(filters.startDate);
+        paramCount++
+        whereClause += ` AND c.created_at >= $${paramCount}`
+        values.push(filters.startDate)
       }
 
       if (filters.endDate) {
-        paramCount++;
-        whereClause += ` AND c.created_at <= $${paramCount}`;
-        values.push(filters.endDate);
+        paramCount++
+        whereClause += ` AND c.created_at <= $${paramCount}`
+        values.push(filters.endDate)
       }
 
       const analyticsQuery = `
@@ -441,15 +436,15 @@ class CallService {
         FROM calls c
         LEFT JOIN call_analytics ca ON c.id = ca.call_id
         ${whereClause}
-      `;
+      `
 
-      const result = await this.pool.query(analyticsQuery, values);
-      const stats = result.rows[0];
+      const result = await this.pool.query(analyticsQuery, values)
+      const stats = result.rows[0]
 
       // Calculate derived metrics
-      const totalCalls = parseInt(stats.total_calls) || 0;
-      const completedCalls = parseInt(stats.completed_calls) || 0;
-      const successfulCalls = parseInt(stats.successful_calls) || 0;
+      const totalCalls = parseInt(stats.total_calls) || 0
+      const completedCalls = parseInt(stats.completed_calls) || 0
+      const successfulCalls = parseInt(stats.successful_calls) || 0
 
       return {
         overview: {
@@ -476,26 +471,25 @@ class CallService {
           completed: parseInt(stats.status_completed) || 0,
           failed: parseInt(stats.status_failed) || 0
         }
-      };
-
+      }
     } catch (error) {
-      console.error('Error fetching call analytics:', error);
-      throw error;
+      console.error('Error fetching call analytics:', error)
+      throw error
     }
   }
 
   // Terminate active call
-  async terminateCall(callId) {
+  async terminateCall (callId) {
     try {
       // Get call details
-      const call = await this.getCallById(callId);
-      
+      const call = await this.getCallById(callId)
+
       if (!call) {
-        throw new Error(`Call with ID ${callId} not found`);
+        throw new Error(`Call with ID ${callId} not found`)
       }
 
       if (!call.call_sid) {
-        throw new Error('Call SID not found - cannot terminate');
+        throw new Error('Call SID not found - cannot terminate')
       }
 
       if (['completed', 'failed', 'canceled'].includes(call.status)) {
@@ -503,64 +497,62 @@ class CallService {
           success: true,
           message: `Call already ${call.status}`,
           status: call.status
-        };
+        }
       }
 
       // Terminate call via Twilio
-      const result = await twilioService.hangupCall(call.call_sid);
+      const result = await twilioService.hangupCall(call.call_sid)
 
       // Update call status
       await this.updateCallStatus(call.call_sid, 'canceled', {
         outcome: 'canceled',
         terminated_manually: true
-      });
+      })
 
       return {
         success: true,
         message: 'Call terminated successfully',
         callId: callId,
         callSid: call.call_sid
-      };
-
+      }
     } catch (error) {
-      console.error('Error terminating call:', error);
-      throw error;
+      console.error('Error terminating call:', error)
+      throw error
     }
   }
 
   // Get call recordings
-  async getCallRecordings(callId) {
+  async getCallRecordings (callId) {
     try {
-      const call = await this.getCallById(callId);
-      
+      const call = await this.getCallById(callId)
+
       if (!call || !call.call_sid) {
-        throw new Error('Call not found or no call SID available');
+        throw new Error('Call not found or no call SID available')
       }
 
-      const recordings = await twilioService.getCallRecordings(call.call_sid);
-      
+      const recordings = await twilioService.getCallRecordings(call.call_sid)
+
       return {
         callId: callId,
         callSid: call.call_sid,
         recordings: recordings
-      };
-
+      }
     } catch (error) {
-      console.error('Error fetching call recordings:', error);
-      throw error;
+      console.error('Error fetching call recordings:', error)
+      throw error
     }
   }
 
   // Health check for call system
-  async healthCheck() {
+  async healthCheck () {
     try {
       const [twilioHealth, elevenLabsHealth] = await Promise.all([
         twilioService.healthCheck(),
         elevenLabsService.healthCheck()
-      ]);
+      ])
 
       // Check database connectivity
-      await this.pool.query('SELECT 1');
+      await this.pool.query('SELECT 1')
 
       return {
         status: 'healthy',
@@ -573,16 +565,15 @@ class CallService {
           }
         },
         timestamp: new Date().toISOString()
-      };
-
+      }
     } catch (error) {
       return {
         status: 'unhealthy',
         error: error.message,
         timestamp: new Date().toISOString()
-      };
+      }
     }
   }
 }
 
-module.exports = new CallService();
+module.exports = new CallService()

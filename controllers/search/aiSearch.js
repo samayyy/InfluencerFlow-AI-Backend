@@ -1,9 +1,9 @@
 // controllers/search/aiSearch.js
-const express = require("express");
-const router = express.Router();
-const __constants = require("../../config/constants");
-const validationOfAPI = require("../../middlewares/validation");
-const aiSearchOrchestrator = require("../../services/search/aiSearchOrchestrator");
+const express = require('express')
+const router = express.Router()
+const __constants = require('../../config/constants')
+const validationOfAPI = require('../../middlewares/validation')
+const aiSearchOrchestrator = require('../../services/search/aiSearchOrchestrator')
 
 /**
  * @namespace -AI-SEARCH-MODULE-
@@ -21,20 +21,20 @@ const aiSearchOrchestrator = require("../../services/search/aiSearchOrchestrator
  */
 
 const aiSearchValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    query: { type: "string", required: true, minLength: 2 },
-    filters: { type: "object", required: false },
-    max_results: { type: "number", required: false },
-    use_hybrid_search: { type: "boolean", required: false },
-    include_metadata: { type: "boolean", required: false },
-  },
-};
+    query: { type: 'string', required: true, minLength: 2 },
+    filters: { type: 'object', required: false },
+    max_results: { type: 'number', required: false },
+    use_hybrid_search: { type: 'boolean', required: false },
+    include_metadata: { type: 'boolean', required: false }
+  }
+}
 
 const aiSearchValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, aiSearchValidationSchema, "body");
-};
+  return validationOfAPI(req, res, next, aiSearchValidationSchema, 'body')
+}
 
 const aiSearch = async (req, res) => {
   try {
@@ -43,43 +43,43 @@ const aiSearch = async (req, res) => {
       filters = {},
       max_results = 20,
       use_hybrid_search = true,
-      include_metadata = true,
-    } = req.body;
+      include_metadata = true
+    } = req.body
 
     // Additional validation
-    if (!query || typeof query !== "string" || query.trim().length === 0) {
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
-        err: "Query is required and must be a non-empty string",
-      });
+        err: 'Query is required and must be a non-empty string'
+      })
     }
 
     console.log(
       `🔍 AI Search request: "${query.substring(0, 100)}${
-        query.length > 100 ? "..." : ""
+        query.length > 100 ? '...' : ''
       }"`
-    );
+    )
 
     const searchOptions = {
       filters: filters || {},
       maxResults: Math.min(max_results, 50), // Cap at 50 results
       useHybridSearch: use_hybrid_search,
       includeMetadata: include_metadata,
-      user_agent: req.get("User-Agent"),
+      user_agent: req.get('User-Agent'),
       ip_address: req.ip,
-      session_id: req.sessionID || req.ip,
-    };
+      session_id: req.sessionID || req.ip
+    }
 
     const searchResults = await aiSearchOrchestrator.search(
       query,
       searchOptions
-    );
+    )
 
     if (!searchResults) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-        err: "Search returned no response",
-      });
+        err: 'Search returned no response'
+      })
     }
 
     if (!searchResults.success) {
@@ -88,9 +88,9 @@ const aiSearch = async (req, res) => {
         err: searchResults.errors || [searchResults.error],
         data: {
           suggestions: searchResults.suggestions,
-          fallback_suggestion: searchResults.fallback_suggestion,
-        },
-      });
+          fallback_suggestion: searchResults.fallback_suggestion
+        }
+      })
     }
 
     res.sendJson({
@@ -101,17 +101,17 @@ const aiSearch = async (req, res) => {
         suggestions: searchResults.suggestions || [],
         search_id: `search_${Date.now()}_${Math.random()
           .toString(36)
-          .substr(2, 9)}`,
-      },
-    });
+          .substr(2, 9)}`
+      }
+    })
   } catch (err) {
-    console.error("Error in aiSearch:", err);
+    console.error('Error in aiSearch:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-module-
@@ -121,49 +121,49 @@ const aiSearch = async (req, res) => {
  */
 
 const suggestionsValidationSchema = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    q: { type: "string", required: true, minLength: 1 },
-    filters: { type: "string", required: false }, // JSON string
-    limit: { type: "string", required: false },
-  },
-};
+    q: { type: 'string', required: true, minLength: 1 },
+    filters: { type: 'string', required: false }, // JSON string
+    limit: { type: 'string', required: false }
+  }
+}
 
 const suggestionsValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, suggestionsValidationSchema, "query");
-};
+  return validationOfAPI(req, res, next, suggestionsValidationSchema, 'query')
+}
 
 const getSearchSuggestions = async (req, res) => {
   try {
-    const { q, filters: filtersStr, limit = "8" } = req.query;
+    const { q, filters: filtersStr, limit = '8' } = req.query
 
-    let filters = {};
+    let filters = {}
     if (filtersStr) {
       try {
-        filters = JSON.parse(filtersStr);
+        filters = JSON.parse(filtersStr)
       } catch (e) {
-        console.warn("Invalid filters JSON:", filtersStr);
+        console.warn('Invalid filters JSON:', filtersStr)
       }
     }
 
     const suggestions = await aiSearchOrchestrator.getSearchSuggestions(q, {
       filters,
-      maxSuggestions: parseInt(limit),
-    });
+      maxSuggestions: parseInt(limit)
+    })
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: suggestions,
-    });
+      data: suggestions
+    })
   } catch (err) {
-    console.error("Error in getSearchSuggestions:", err);
+    console.error('Error in getSearchSuggestions:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-module-
@@ -173,18 +173,18 @@ const getSearchSuggestions = async (req, res) => {
  */
 
 const advancedSearchValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    content_focus: { type: "string", required: false },
-    audience_focus: { type: "string", required: false },
-    brand_focus: { type: "string", required: false },
-    budget_range: { type: "object", required: false },
-    performance_metrics: { type: "object", required: false },
-    filters: { type: "object", required: false },
-    max_results: { type: "number", required: false },
-  },
-};
+    content_focus: { type: 'string', required: false },
+    audience_focus: { type: 'string', required: false },
+    brand_focus: { type: 'string', required: false },
+    budget_range: { type: 'object', required: false },
+    performance_metrics: { type: 'object', required: false },
+    filters: { type: 'object', required: false },
+    max_results: { type: 'number', required: false }
+  }
+}
 
 const advancedSearchValidation = (req, res, next) => {
   return validationOfAPI(
@@ -192,39 +192,39 @@ const advancedSearchValidation = (req, res, next) => {
     res,
     next,
     advancedSearchValidationSchema,
-    "body"
-  );
-};
+    'body'
+  )
+}
 
 const advancedSearch = async (req, res) => {
   try {
-    const searchCriteria = req.body;
+    const searchCriteria = req.body
 
-    console.log(`🎯 Advanced search request:`, Object.keys(searchCriteria));
+    console.log('🎯 Advanced search request:', Object.keys(searchCriteria))
 
     const results = await aiSearchOrchestrator.advancedSearch(searchCriteria, {
-      filters: searchCriteria.filters || {},
-    });
+      filters: searchCriteria.filters || {}
+    })
 
     if (!results.success) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.FAILED,
-        err: results.error,
-      });
+        err: results.error
+      })
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: results,
-    });
+      data: results
+    })
   } catch (err) {
-    console.error("Error in advancedSearch:", err);
+    console.error('Error in advancedSearch:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-module-
@@ -234,63 +234,63 @@ const advancedSearch = async (req, res) => {
  */
 
 const similarValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    creatorId: { type: "string", required: true },
-  },
-};
+    creatorId: { type: 'string', required: true }
+  }
+}
 
 const similarValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, similarValidationSchema, "params");
-};
+  return validationOfAPI(req, res, next, similarValidationSchema, 'params')
+}
 
 const findSimilarCreators = async (req, res) => {
   try {
-    const { creatorId } = req.params;
+    const { creatorId } = req.params
 
     // ✅ Validate UUID format
     const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(creatorId)) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
-        err: "Invalid UUID format for creator ID",
-      });
+        err: 'Invalid UUID format for creator ID'
+      })
     }
 
     const {
-      limit = "10",
-      filters: filtersStr = "{}",
-      include_original = "false",
-    } = req.query;
+      limit = '10',
+      filters: filtersStr = '{}',
+      include_original = 'false'
+    } = req.query
 
-    let filters = {};
+    let filters = {}
     try {
-      filters = JSON.parse(filtersStr);
+      filters = JSON.parse(filtersStr)
     } catch (e) {
-      console.warn("Invalid filters JSON:", filtersStr);
+      console.warn('Invalid filters JSON:', filtersStr)
     }
 
-    console.log(`👥 Finding creators similar to UUID: ${creatorId}`);
+    console.log(`👥 Finding creators similar to UUID: ${creatorId}`)
 
     // Use the vector search service directly for similarity search
-    const vectorSearchService = require("../../services/search/vectorSearchService");
-    await vectorSearchService.initialize();
+    const vectorSearchService = require('../../services/search/vectorSearchService')
+    await vectorSearchService.initialize()
 
     const results = await vectorSearchService.findSimilarCreators(creatorId, {
       topK: parseInt(limit),
       filters,
-      includeOriginal: include_original === "true",
-    });
+      includeOriginal: include_original === 'true'
+    })
 
     // Enrich with creator data
-    const aiSearchOrchestrator = require("../../services/search/aiSearchOrchestrator");
+    const aiSearchOrchestrator = require('../../services/search/aiSearchOrchestrator')
     const enrichedResults =
       await aiSearchOrchestrator.enrichResultsWithCreatorData(
         results.results,
         parseInt(limit)
-      );
+      )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
@@ -298,17 +298,17 @@ const findSimilarCreators = async (req, res) => {
         results: enrichedResults,
         reference_creator_uuid: creatorId,
         total_matches: results.total_matches,
-        search_type: "similarity",
-      },
-    });
+        search_type: 'similarity'
+      }
+    })
   } catch (err) {
-    console.error("Error in findSimilarCreators:", err);
+    console.error('Error in findSimilarCreators:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-module-
@@ -319,31 +319,31 @@ const findSimilarCreators = async (req, res) => {
 
 const searchHealthCheck = async (req, res) => {
   try {
-    const healthStatus = await aiSearchOrchestrator.healthCheck();
+    const healthStatus = await aiSearchOrchestrator.healthCheck()
 
     const responseType =
-      healthStatus.status === "healthy"
+      healthStatus.status === 'healthy'
         ? __constants.RESPONSE_MESSAGES.SUCCESS
-        : __constants.RESPONSE_MESSAGES.FAILED;
+        : __constants.RESPONSE_MESSAGES.FAILED
 
     res.sendJson({
       type: responseType,
-      data: healthStatus,
-    });
+      data: healthStatus
+    })
   } catch (err) {
-    console.error("Error in searchHealthCheck:", err);
+    console.error('Error in searchHealthCheck:', err)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 // Route definitions
-router.post("/aiSearch", aiSearchValidation, aiSearch);
-router.get("/suggestions", suggestionsValidation, getSearchSuggestions);
-router.post("/advanced", advancedSearchValidation, advancedSearch);
-router.get("/similar/:creatorId", similarValidation, findSimilarCreators);
-router.get("/health", searchHealthCheck);
+router.post('/aiSearch', aiSearchValidation, aiSearch)
+router.get('/suggestions', suggestionsValidation, getSearchSuggestions)
+router.post('/advanced', advancedSearchValidation, advancedSearch)
+router.get('/similar/:creatorId', similarValidation, findSimilarCreators)
+router.get('/health', searchHealthCheck)
 
-module.exports = router;
+module.exports = router

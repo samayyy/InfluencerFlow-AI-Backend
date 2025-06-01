@@ -1,8 +1,8 @@
 // migrations/runCallMigration.js
-const { Pool } = require('pg');
-const fs = require('fs');
-const path = require('path');
-const __config = require('../config');
+const { Pool } = require('pg')
+const fs = require('fs')
+const path = require('path')
+const __config = require('../config')
 
 const pool = new Pool({
   user: __config.postgres.user,
@@ -11,12 +11,12 @@ const pool = new Pool({
   password: __config.postgres.password,
   port: __config.postgres.port,
   ssl: { rejectUnauthorized: false }
-});
+})
 
-async function runCallMigration() {
+async function runCallMigration () {
   try {
-    console.log('🚀 Starting call system database migration...');
-    
+    console.log('🚀 Starting call system database migration...')
+
     // Read the migration SQL file
     const migrationSQL = `
 -- Calls table to track all outbound calls
@@ -87,37 +87,36 @@ CREATE TRIGGER update_calls_updated_at
     BEFORE UPDATE ON calls 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
-    `;
-    
-    await pool.query(migrationSQL);
-    
-    console.log('✅ Migration completed successfully!');
-    console.log('📋 Created tables:');
-    console.log('   - calls');
-    console.log('   - call_events');
-    console.log('   - call_analytics');
-    console.log('📊 Created indexes for performance');
-    console.log('🔄 Created trigger for automatic timestamp updates');
-    
+    `
+
+    await pool.query(migrationSQL)
+
+    console.log('✅ Migration completed successfully!')
+    console.log('📋 Created tables:')
+    console.log('   - calls')
+    console.log('   - call_events')
+    console.log('   - call_analytics')
+    console.log('📊 Created indexes for performance')
+    console.log('🔄 Created trigger for automatic timestamp updates')
+
     // Test basic functionality
-    console.log('\n🧪 Testing database connection...');
-    const testResult = await pool.query('SELECT COUNT(*) FROM calls');
-    console.log(`✅ Database test successful. Current calls count: ${testResult.rows[0].count}`);
-    
+    console.log('\n🧪 Testing database connection...')
+    const testResult = await pool.query('SELECT COUNT(*) FROM calls')
+    console.log(`✅ Database test successful. Current calls count: ${testResult.rows[0].count}`)
   } catch (error) {
-    console.error('❌ Migration failed:', error);
-    console.error('\n🔧 Troubleshooting:');
-    console.error('1. Ensure PostgreSQL is running');
-    console.error('2. Check database connection settings in config/index.js');
-    console.error('3. Verify the creators table exists (required for foreign key)');
-    console.error('4. Check database user permissions');
+    console.error('❌ Migration failed:', error)
+    console.error('\n🔧 Troubleshooting:')
+    console.error('1. Ensure PostgreSQL is running')
+    console.error('2. Check database connection settings in config/index.js')
+    console.error('3. Verify the creators table exists (required for foreign key)')
+    console.error('4. Check database user permissions')
   } finally {
-    await pool.end();
+    await pool.end()
   }
 }
 
 if (require.main === module) {
-  runCallMigration();
+  runCallMigration()
 }
 
-module.exports = { runCallMigration };
+module.exports = { runCallMigration }

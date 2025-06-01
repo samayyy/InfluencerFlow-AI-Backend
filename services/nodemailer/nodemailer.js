@@ -1,23 +1,23 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require('nodemailer')
 
 class MailService {
-  constructor() {
+  constructor () {
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT,
       secure: false, // true for port 465
       auth: {
         user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+        pass: process.env.SMTP_PASS
+      }
+    })
   }
 
-  async sendBrandCollabEmail({
+  async sendBrandCollabEmail ({
     to,
     name,
     brandName,
-    platform,
+    platform
   }) {
     const mailOptions = {
       from: `"${brandName}" <${process.env.SMTP_USER}>`,
@@ -48,18 +48,18 @@ class MailService {
 
         <p>Warm regards,<br/>
         The <strong>${brandName}</strong> Team</p>
-      `,
-    };
+      `
+    }
 
     try {
-      const info = await this.transporter.sendMail(mailOptions);
-      console.log(`✅ Mail sent to ${to}: ${info.messageId}`);
-      return info;
+      const info = await this.transporter.sendMail(mailOptions)
+      console.log(`✅ Mail sent to ${to}: ${info.messageId}`)
+      return info
     } catch (err) {
-      console.error(`❌ Failed to send email to ${to}`, err);
-      throw err;
+      console.error(`❌ Failed to send email to ${to}`, err)
+      throw err
     }
   }
 }
 
-module.exports = new MailService();
+module.exports = new MailService()

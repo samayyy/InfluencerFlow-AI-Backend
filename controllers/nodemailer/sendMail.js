@@ -1,9 +1,9 @@
-const express = require("express");
-const router = express.Router();
-const __constants = require("../../config/constants");
-const creatorsQueries = require("../../queries/mails/mails_queries");
-const validationOfAPI = require("../../middlewares/validation");
-const MailService = require("../../services/nodemailer/nodemailer");
+const express = require('express')
+const router = express.Router()
+const __constants = require('../../config/constants')
+const creatorsQueries = require('../../queries/mails/mails_queries')
+const validationOfAPI = require('../../middlewares/validation')
+const MailService = require('../../services/nodemailer/nodemailer')
 // const Pool = require('../../lib/db/postgres').pool()
 
 /**
@@ -24,64 +24,64 @@ const MailService = require("../../services/nodemailer/nodemailer");
  */
 
 const validationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
     creatorIds: {
-      type: "array",
-      items: { type: "string" },
-      minItems: 1,
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1
     },
-    brandName: { type: "string" },
-  },
-};
+    brandName: { type: 'string' }
+  }
+}
 
 const validation = (req, res, next) => {
-  return validationOfAPI(req, res, next, validationSchema, "body");
-};
+  return validationOfAPI(req, res, next, validationSchema, 'body')
+}
 
 const sendBrandCollab = async (req, res) => {
   try {
-    const { creatorIds, brandName } = req.body;
+    const { creatorIds, brandName } = req.body
 
-    const notFoundIds = [];
+    const notFoundIds = []
 
     for (const id of creatorIds) {
-      const creatorRes = await creatorsQueries.getAllCreators(id);
+      const creatorRes = await creatorsQueries.getAllCreators(id)
 
       if (!creatorRes.rows.length) {
-        notFoundIds.push(id);
-        continue;
+        notFoundIds.push(id)
+        continue
       }
 
-      const creator = creatorRes.rows[0];
+      const creator = creatorRes.rows[0]
 
       // Send email
       await MailService.sendBrandCollabEmail({
         to: creator.email,
         name: creator.creator_name,
         brandName,
-        niche: creator.niche || "N/A",
-        platform: creator.primary_platform || "N/A",
-      });
+        niche: creator.niche || 'N/A',
+        platform: creator.primary_platform || 'N/A'
+      })
     }
 
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Emails sent successfully",
-        notFound: notFoundIds.length ? notFoundIds : undefined,
-      },
-    });
+        message: 'Emails sent successfully',
+        notFound: notFoundIds.length ? notFoundIds : undefined
+      }
+    })
   } catch (err) {
-    console.error("Error in sendBrandCollab:", err);
+    console.error('Error in sendBrandCollab:', err)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
-router.post("/sendBrandCollab", validation, sendBrandCollab);
+router.post('/sendBrandCollab', validation, sendBrandCollab)
 
-module.exports = router;
+module.exports = router

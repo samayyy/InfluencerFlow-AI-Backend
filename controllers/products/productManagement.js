@@ -1,11 +1,11 @@
 // controllers/products/productManagement.js
-const express = require("express");
-const router = express.Router();
-const __constants = require("../../config/constants");
-const validationOfAPI = require("../../middlewares/validation");
-const jwtAuth = require("../../middlewares/auth/jwtAuthMiddleware");
-const productService = require("../../services/products/productService");
-const brandService = require("../../services/brands/brandService");
+const express = require('express')
+const router = express.Router()
+const __constants = require('../../config/constants')
+const validationOfAPI = require('../../middlewares/validation')
+const jwtAuth = require('../../middlewares/auth/jwtAuthMiddleware')
+const productService = require('../../services/products/productService')
+const brandService = require('../../services/brands/brandService')
 
 /**
  * @namespace -PRODUCT-MANAGEMENT-MODULE-
@@ -19,66 +19,66 @@ const brandService = require("../../services/brands/brandService");
  * @description Create a new product with optional AI-powered analysis
  */
 const createProductValidation = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    brand_id: { type: "string", required: true },
+    brand_id: { type: 'string', required: true },
     product_name: {
-      type: "string",
+      type: 'string',
       required: true,
       minLength: 2,
-      maxLength: 255,
+      maxLength: 255
     },
-    product_url: { type: "string", required: false, minLength: 4 },
-    category: { type: "string", required: false, maxLength: 100 },
-    subcategory: { type: "string", required: false, maxLength: 100 },
-    price: { type: "number", required: false },
-    currency: { type: "string", required: false },
-    description: { type: "string", required: false, maxLength: 2000 },
-    custom_overview: { type: "string", required: false, maxLength: 2000 },
-    product_images: { type: "array", required: false },
-    key_features: { type: "array", required: false },
-    target_audience: { type: "object", required: false },
-    launch_date: { type: "string", required: false },
-  },
-};
+    product_url: { type: 'string', required: false, minLength: 4 },
+    category: { type: 'string', required: false, maxLength: 100 },
+    subcategory: { type: 'string', required: false, maxLength: 100 },
+    price: { type: 'number', required: false },
+    currency: { type: 'string', required: false },
+    description: { type: 'string', required: false, maxLength: 2000 },
+    custom_overview: { type: 'string', required: false, maxLength: 2000 },
+    product_images: { type: 'array', required: false },
+    key_features: { type: 'array', required: false },
+    target_audience: { type: 'object', required: false },
+    launch_date: { type: 'string', required: false }
+  }
+}
 
 const createProduct = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const productData = req.body;
-    const brandId = productData.brand_id;
+    const userId = req.user.id
+    const productData = req.body
+    const brandId = productData.brand_id
 
     // Verify brand ownership
-    const brand = await brandService.getBrandById(brandId);
+    const brand = await brandService.getBrandById(brandId)
     if (!brand) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        err: "Brand not found",
-      });
+        err: 'Brand not found'
+      })
     }
 
     if (brand.user_id !== userId) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.ACCESS_DENIED,
-        err: "Not authorized to add products to this brand",
-      });
+        err: 'Not authorized to add products to this brand'
+      })
     }
 
     console.log(
       `Creating product for brand ${brandId}: ${productData.product_name}`
-    );
+    )
 
     const product = await productService.createProduct(
       brandId,
       userId,
       productData
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Product created successfully",
+        message: 'Product created successfully',
         product: {
           id: product.id,
           product_name: product.product_name,
@@ -88,22 +88,22 @@ const createProduct = async (req, res) => {
           price: product.price,
           currency: product.currency,
           ai_analysis_available: product.ai_analysis_available,
-          created_at: product.created_at,
+          created_at: product.created_at
         },
         ai_overview: product.ai_generated_overview
           ? JSON.parse(product.ai_generated_overview)
           : null,
-        scraped_data_available: !!product.scraped_data,
-      },
-    });
+        scraped_data_available: !!product.scraped_data
+      }
+    })
   } catch (error) {
-    console.error("Error creating product:", error);
+    console.error('Error creating product:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: error.message || "Failed to create product",
-    });
+      err: error.message || 'Failed to create product'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -112,46 +112,46 @@ const createProduct = async (req, res) => {
  * @description Get specific product by ID
  */
 const getProductByIdValidation = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    productId: { type: "string", required: true },
-  },
-};
+    productId: { type: 'string', required: true }
+  }
+}
 
 const getProductById = async (req, res) => {
   try {
-    const { productId } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    const { productId } = req.params
+    const userId = req.user.id
+    const userRole = req.user.role
 
     const product = await productService.getProductById(
       productId,
       userId,
       userRole
-    );
+    )
 
     if (!product) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        err: "Product not found",
-      });
+        err: 'Product not found'
+      })
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        product: product,
-      },
-    });
+        product: product
+      }
+    })
   } catch (error) {
-    console.error("Error getting product by ID:", error);
+    console.error('Error getting product by ID:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Failed to get product details",
-    });
+      err: 'Failed to get product details'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -160,36 +160,36 @@ const getProductById = async (req, res) => {
  * @description Get current user's products
  */
 const getMyProductsValidation = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    page: { type: "string", required: false },
-    limit: { type: "string", required: false },
-  },
-};
+    page: { type: 'string', required: false },
+    limit: { type: 'string', required: false }
+  }
+}
 
 const getMyProducts = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const pagination = {};
+    const userId = req.user.id
+    const pagination = {}
 
-    if (req.query.page) pagination.page = parseInt(req.query.page);
-    if (req.query.limit) pagination.limit = parseInt(req.query.limit);
+    if (req.query.page) pagination.page = parseInt(req.query.page)
+    if (req.query.limit) pagination.limit = parseInt(req.query.limit)
 
-    const result = await productService.getUserProducts(userId, pagination);
+    const result = await productService.getUserProducts(userId, pagination)
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: result,
-    });
+      data: result
+    })
   } catch (error) {
-    console.error("Error getting user products:", error);
+    console.error('Error getting user products:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Failed to get products",
-    });
+      err: 'Failed to get products'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -198,57 +198,57 @@ const getMyProducts = async (req, res) => {
  * @description Get products by brand ID
  */
 const getProductsByBrandValidation = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    brandId: { type: "string", required: true },
-  },
-};
+    brandId: { type: 'string', required: true }
+  }
+}
 
 const getProductsByBrand = async (req, res) => {
   try {
-    const { brandId } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    const { brandId } = req.params
+    const userId = req.user.id
+    const userRole = req.user.role
 
-    const pagination = {};
-    if (req.query.page) pagination.page = parseInt(req.query.page);
-    if (req.query.limit) pagination.limit = parseInt(req.query.limit);
+    const pagination = {}
+    if (req.query.page) pagination.page = parseInt(req.query.page)
+    if (req.query.limit) pagination.limit = parseInt(req.query.limit)
 
     // Check if user can access this brand's products
-    const brand = await brandService.getBrandById(brandId);
+    const brand = await brandService.getBrandById(brandId)
     if (!brand) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        err: "Brand not found",
-      });
+        err: 'Brand not found'
+      })
     }
 
     // Only brand owners and admins can see all product details
-    if (brand.user_id !== userId && userRole !== "admin") {
+    if (brand.user_id !== userId && userRole !== 'admin') {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.ACCESS_DENIED,
-        err: "Not authorized to view these products",
-      });
+        err: 'Not authorized to view these products'
+      })
     }
 
     const result = await productService.getProductsByBrandId(
       brandId,
       pagination
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: result,
-    });
+      data: result
+    })
   } catch (error) {
-    console.error("Error getting products by brand:", error);
+    console.error('Error getting products by brand:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Failed to get brand products",
-    });
+      err: 'Failed to get brand products'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -257,71 +257,71 @@ const getProductsByBrand = async (req, res) => {
  * @description Update product details
  */
 const updateProductValidation = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
     product_name: {
-      type: "string",
+      type: 'string',
       required: false,
       minLength: 2,
-      maxLength: 255,
+      maxLength: 255
     },
-    product_url: { type: "string", required: false, minLength: 4 },
-    category: { type: "string", required: false, maxLength: 100 },
-    subcategory: { type: "string", required: false, maxLength: 100 },
-    price: { type: "number", required: false },
-    currency: { type: "string", required: false },
-    description: { type: "string", required: false, maxLength: 2000 },
-    custom_overview: { type: "string", required: false, maxLength: 2000 },
-    product_images: { type: "array", required: false },
-    key_features: { type: "array", required: false },
-    target_audience: { type: "object", required: false },
-    launch_date: { type: "string", required: false },
-  },
-};
+    product_url: { type: 'string', required: false, minLength: 4 },
+    category: { type: 'string', required: false, maxLength: 100 },
+    subcategory: { type: 'string', required: false, maxLength: 100 },
+    price: { type: 'number', required: false },
+    currency: { type: 'string', required: false },
+    description: { type: 'string', required: false, maxLength: 2000 },
+    custom_overview: { type: 'string', required: false, maxLength: 2000 },
+    product_images: { type: 'array', required: false },
+    key_features: { type: 'array', required: false },
+    target_audience: { type: 'object', required: false },
+    launch_date: { type: 'string', required: false }
+  }
+}
 
 const updateProduct = async (req, res) => {
   try {
-    const { productId } = req.params;
-    const userId = req.user.id;
-    const updateData = req.body;
+    const { productId } = req.params
+    const userId = req.user.id
+    const updateData = req.body
 
     const updatedProduct = await productService.updateProduct(
       productId,
       userId,
       updateData
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Product updated successfully",
-        product: updatedProduct,
-      },
-    });
+        message: 'Product updated successfully',
+        product: updatedProduct
+      }
+    })
   } catch (error) {
-    console.error("Error updating product:", error);
+    console.error('Error updating product:', error)
 
-    if (error.message.includes("not authorized")) {
+    if (error.message.includes('not authorized')) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.ACCESS_DENIED,
-        err: "Not authorized to update this product",
-      });
+        err: 'Not authorized to update this product'
+      })
     }
 
-    if (error.message.includes("not found")) {
+    if (error.message.includes('not found')) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        err: "Product not found",
-      });
+        err: 'Product not found'
+      })
     }
 
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: error.message || "Failed to update product",
-    });
+      err: error.message || 'Failed to update product'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -330,62 +330,62 @@ const updateProduct = async (req, res) => {
  * @description Analyze a product URL and generate AI-powered overview
  */
 const analyzeProductUrlValidation = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    product_url: { type: "string", required: true, minLength: 4 },
-    product_name: { type: "string", required: false },
-    category: { type: "string", required: false },
-    price: { type: "number", required: false },
-    description: { type: "string", required: false },
-    key_features: { type: "array", required: false },
-  },
-};
+    product_url: { type: 'string', required: true, minLength: 4 },
+    product_name: { type: 'string', required: false },
+    category: { type: 'string', required: false },
+    price: { type: 'number', required: false },
+    description: { type: 'string', required: false },
+    key_features: { type: 'array', required: false }
+  }
+}
 
 const analyzeProductUrl = async (req, res) => {
   try {
-    const productData = req.body;
+    const productData = req.body
 
-    console.log(`Analyzing product URL: ${productData.product_url}`);
+    console.log(`Analyzing product URL: ${productData.product_url}`)
 
     // Import the web scraping service and generate overview
-    const webScrapingService = require("../../services/ai/webScrapingService");
+    const webScrapingService = require('../../services/ai/webScrapingService')
 
     // Scrape product URL
     const scrapedData = await webScrapingService.scrapeWebsite(
       productData.product_url
-    );
+    )
 
     // Generate AI overview
     const aiOverview = await productService.generateProductOverview(
       productData,
       scrapedData
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Product URL analysis completed",
+        message: 'Product URL analysis completed',
         ai_overview: aiOverview,
         scraped_data: {
           title: scrapedData.title,
           description: scrapedData.description,
           headings: scrapedData.headings?.slice(0, 5),
           contact_info: scrapedData.contactInfo,
-          cached: scrapedData.cached || false,
+          cached: scrapedData.cached || false
         },
         confidence_score: aiOverview.confidence_score,
-        analysis_timestamp: new Date().toISOString(),
-      },
-    });
+        analysis_timestamp: new Date().toISOString()
+      }
+    })
   } catch (error) {
-    console.error("Error analyzing product URL:", error);
+    console.error('Error analyzing product URL:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.FAILED,
-      err: error.message || "Product URL analysis failed",
-    });
+      err: error.message || 'Product URL analysis failed'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -395,39 +395,39 @@ const analyzeProductUrl = async (req, res) => {
  */
 const regenerateProductOverview = async (req, res) => {
   try {
-    const { productId } = req.params;
-    const userId = req.user.id;
+    const { productId } = req.params
+    const userId = req.user.id
 
     const result = await productService.regenerateProductOverview(
       productId,
       userId
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Product AI overview regenerated successfully",
+        message: 'Product AI overview regenerated successfully',
         ai_overview: result.ai_overview,
         updated_at: result.product.updated_at,
-        scraped_data_available: !!result.scraped_data,
-      },
-    });
+        scraped_data_available: !!result.scraped_data
+      }
+    })
   } catch (error) {
-    console.error("Error regenerating product overview:", error);
+    console.error('Error regenerating product overview:', error)
 
-    if (error.message.includes("not authorized")) {
+    if (error.message.includes('not authorized')) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.ACCESS_DENIED,
-        err: "Not authorized to update this product",
-      });
+        err: 'Not authorized to update this product'
+      })
     }
 
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: error.message || "Failed to regenerate product overview",
-    });
+      err: error.message || 'Failed to regenerate product overview'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -437,26 +437,26 @@ const regenerateProductOverview = async (req, res) => {
  */
 const deleteProduct = async (req, res) => {
   try {
-    const { productId } = req.params;
-    const userId = req.user.id;
+    const { productId } = req.params
+    const userId = req.user.id
 
-    const result = await productService.deleteProduct(productId, userId);
+    const result = await productService.deleteProduct(productId, userId)
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Product deleted successfully",
-        deleted: result.deleted,
-      },
-    });
+        message: 'Product deleted successfully',
+        deleted: result.deleted
+      }
+    })
   } catch (error) {
-    console.error("Error deleting product:", error);
+    console.error('Error deleting product:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: error.message || "Failed to delete product",
-    });
+      err: error.message || 'Failed to delete product'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -465,53 +465,51 @@ const deleteProduct = async (req, res) => {
  * @description Search products across all brands
  */
 const searchProductsValidation = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    q: { type: "string", required: true, minLength: 2 },
-    category: { type: "string", required: false },
-    min_price: { type: "string", required: false },
-    max_price: { type: "string", required: false },
-    brand_id: { type: "string", required: false },
-    page: { type: "string", required: false },
-    limit: { type: "string", required: false },
-  },
-};
+    q: { type: 'string', required: true, minLength: 2 },
+    category: { type: 'string', required: false },
+    min_price: { type: 'string', required: false },
+    max_price: { type: 'string', required: false },
+    brand_id: { type: 'string', required: false },
+    page: { type: 'string', required: false },
+    limit: { type: 'string', required: false }
+  }
+}
 
 const searchProducts = async (req, res) => {
   try {
-    const { q: searchTerm } = req.query;
+    const { q: searchTerm } = req.query
 
-    const filters = {};
-    if (req.query.category) filters.category = req.query.category;
-    if (req.query.min_price)
-      filters.min_price = parseFloat(req.query.min_price);
-    if (req.query.max_price)
-      filters.max_price = parseFloat(req.query.max_price);
-    if (req.query.brand_id) filters.brand_id = req.query.brand_id;
+    const filters = {}
+    if (req.query.category) filters.category = req.query.category
+    if (req.query.min_price) { filters.min_price = parseFloat(req.query.min_price) }
+    if (req.query.max_price) { filters.max_price = parseFloat(req.query.max_price) }
+    if (req.query.brand_id) filters.brand_id = req.query.brand_id
 
-    const pagination = {};
-    if (req.query.page) pagination.page = parseInt(req.query.page);
-    if (req.query.limit) pagination.limit = parseInt(req.query.limit);
+    const pagination = {}
+    if (req.query.page) pagination.page = parseInt(req.query.page)
+    if (req.query.limit) pagination.limit = parseInt(req.query.limit)
 
     const result = await productService.searchProducts(
       searchTerm,
       filters,
       pagination
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: result,
-    });
+      data: result
+    })
   } catch (error) {
-    console.error("Error searching products:", error);
+    console.error('Error searching products:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Product search failed",
-    });
+      err: 'Product search failed'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -521,23 +519,23 @@ const searchProducts = async (req, res) => {
  */
 const getProductStats = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const stats = await productService.getProductStats(userId);
+    const userId = req.user.id
+    const stats = await productService.getProductStats(userId)
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        statistics: stats,
-      },
-    });
+        statistics: stats
+      }
+    })
   } catch (error) {
-    console.error("Error getting product stats:", error);
+    console.error('Error getting product stats:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Failed to get product statistics",
-    });
+      err: 'Failed to get product statistics'
+    })
   }
-};
+}
 
 /**
  * ADMIN ONLY ENDPOINTS
@@ -550,49 +548,49 @@ const getProductStats = async (req, res) => {
  * @description Get all products with filtering (Admin only)
  */
 const getAllProductsValidation = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    page: { type: "string", required: false },
-    limit: { type: "string", required: false },
-    category: { type: "string", required: false },
-    brand_id: { type: "string", required: false },
-    search: { type: "string", required: false },
-  },
-};
+    page: { type: 'string', required: false },
+    limit: { type: 'string', required: false },
+    category: { type: 'string', required: false },
+    brand_id: { type: 'string', required: false },
+    search: { type: 'string', required: false }
+  }
+}
 
 const getAllProducts = async (req, res) => {
   try {
-    const { search } = req.query;
+    const { search } = req.query
 
-    const filters = {};
-    if (req.query.category) filters.category = req.query.category;
-    if (req.query.brand_id) filters.brand_id = req.query.brand_id;
+    const filters = {}
+    if (req.query.category) filters.category = req.query.category
+    if (req.query.brand_id) filters.brand_id = req.query.brand_id
 
-    const pagination = {};
-    if (req.query.page) pagination.page = parseInt(req.query.page);
-    if (req.query.limit) pagination.limit = parseInt(req.query.limit);
+    const pagination = {}
+    if (req.query.page) pagination.page = parseInt(req.query.page)
+    if (req.query.limit) pagination.limit = parseInt(req.query.limit)
 
-    let result;
+    let result
     if (search) {
-      result = await productService.searchProducts(search, filters, pagination);
+      result = await productService.searchProducts(search, filters, pagination)
     } else {
       // This would need a new method in productService to get all products
-      result = await productService.searchProducts("", filters, pagination);
+      result = await productService.searchProducts('', filters, pagination)
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: result,
-    });
+      data: result
+    })
   } catch (error) {
-    console.error("Error getting all products:", error);
+    console.error('Error getting all products:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Failed to get products",
-    });
+      err: 'Failed to get products'
+    })
   }
-};
+}
 
 /**
  * @memberof -PRODUCT-MANAGEMENT-module-
@@ -602,121 +600,121 @@ const getAllProducts = async (req, res) => {
  */
 const getGlobalProductStats = async (req, res) => {
   try {
-    const stats = await productService.getProductStats(); // No userId = global stats
+    const stats = await productService.getProductStats() // No userId = global stats
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        statistics: stats,
-      },
-    });
+        statistics: stats
+      }
+    })
   } catch (error) {
-    console.error("Error getting global product stats:", error);
+    console.error('Error getting global product stats:', error)
     return res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: "Failed to get global product statistics",
-    });
+      err: 'Failed to get global product statistics'
+    })
   }
-};
+}
 
 // Helper function to get product ownership for middleware
 const getProductOwnerId = async (req) => {
-  const productId = req.params.productId;
-  const product = await productService.getProductById(productId);
-  return product ? product.brand_owner_id : null;
-};
+  const productId = req.params.productId
+  const product = await productService.getProductById(productId)
+  return product ? product.brand_owner_id : null
+}
 
 // Apply authentication and route handlers
-router.use(jwtAuth.securityHeaders());
+router.use(jwtAuth.securityHeaders())
 
 // Public product endpoints (require authentication)
 router.post(
-  "/create",
+  '/create',
   jwtAuth.requireBrand(),
-  jwtAuth.auditLog("CREATE_PRODUCT"),
+  jwtAuth.auditLog('CREATE_PRODUCT'),
   (req, res, next) =>
-    validationOfAPI(req, res, next, createProductValidation, "body"),
+    validationOfAPI(req, res, next, createProductValidation, 'body'),
   createProduct
-);
+)
 
 router.get(
-  "/my-products",
+  '/my-products',
   jwtAuth.requireBrand(),
   (req, res, next) =>
-    validationOfAPI(req, res, next, getMyProductsValidation, "query"),
+    validationOfAPI(req, res, next, getMyProductsValidation, 'query'),
   getMyProducts
-);
+)
 
 router.get(
-  "/search",
+  '/search',
   jwtAuth.requireAuth(),
   (req, res, next) =>
-    validationOfAPI(req, res, next, searchProductsValidation, "query"),
+    validationOfAPI(req, res, next, searchProductsValidation, 'query'),
   searchProducts
-);
+)
 
-router.get("/stats", jwtAuth.requireBrand(), getProductStats);
+router.get('/stats', jwtAuth.requireBrand(), getProductStats)
 
 router.get(
-  "/brand/:brandId",
+  '/brand/:brandId',
   jwtAuth.requireAuth(),
   (req, res, next) =>
-    validationOfAPI(req, res, next, getProductsByBrandValidation, "params"),
+    validationOfAPI(req, res, next, getProductsByBrandValidation, 'params'),
   getProductsByBrand
-);
+)
 
 router.get(
-  "/:productId",
+  '/:productId',
   jwtAuth.requireAuth(),
   (req, res, next) =>
-    validationOfAPI(req, res, next, getProductByIdValidation, "params"),
+    validationOfAPI(req, res, next, getProductByIdValidation, 'params'),
   getProductById
-);
+)
 
 router.put(
-  "/:productId",
+  '/:productId',
   jwtAuth.requireBrand(),
   jwtAuth.requireOwnership(getProductOwnerId),
-  jwtAuth.auditLog("UPDATE_PRODUCT"),
+  jwtAuth.auditLog('UPDATE_PRODUCT'),
   (req, res, next) =>
-    validationOfAPI(req, res, next, updateProductValidation, "body"),
+    validationOfAPI(req, res, next, updateProductValidation, 'body'),
   updateProduct
-);
+)
 
 router.post(
-  "/analyze-url",
+  '/analyze-url',
   jwtAuth.requireBrand(),
   jwtAuth.rateLimit({ maxRequests: 10, windowMinutes: 60 }),
   (req, res, next) =>
-    validationOfAPI(req, res, next, analyzeProductUrlValidation, "body"),
+    validationOfAPI(req, res, next, analyzeProductUrlValidation, 'body'),
   analyzeProductUrl
-);
+)
 
 router.post(
-  "/:productId/regenerate-ai",
+  '/:productId/regenerate-ai',
   jwtAuth.requireBrand(),
   jwtAuth.requireOwnership(getProductOwnerId),
   jwtAuth.rateLimit({ maxRequests: 5, windowMinutes: 60 }),
   regenerateProductOverview
-);
+)
 
 router.delete(
-  "/:productId",
+  '/:productId',
   jwtAuth.requireBrand(),
   jwtAuth.requireOwnership(getProductOwnerId),
-  jwtAuth.auditLog("DELETE_PRODUCT"),
+  jwtAuth.auditLog('DELETE_PRODUCT'),
   deleteProduct
-);
+)
 
 // Admin only endpoints
 router.get(
-  "/admin/all",
+  '/admin/all',
   jwtAuth.requireAdmin(),
   (req, res, next) =>
-    validationOfAPI(req, res, next, getAllProductsValidation, "query"),
+    validationOfAPI(req, res, next, getAllProductsValidation, 'query'),
   getAllProducts
-);
+)
 
-router.get("/admin/stats", jwtAuth.requireAdmin(), getGlobalProductStats);
+router.get('/admin/stats', jwtAuth.requireAdmin(), getGlobalProductStats)
 
-module.exports = router;
+module.exports = router

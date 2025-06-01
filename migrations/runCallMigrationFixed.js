@@ -1,6 +1,6 @@
 // migrations/runCallMigrationFixed.js
-const { Pool } = require('pg');
-const __config = require('../config');
+const { Pool } = require('pg')
+const __config = require('../config')
 
 const pool = new Pool({
   user: __config.postgres.user,
@@ -9,52 +9,51 @@ const pool = new Pool({
   password: __config.postgres.password,
   port: __config.postgres.port,
   ssl: { rejectUnauthorized: false }
-});
+})
 
-async function detectCreatorIdType() {
+async function detectCreatorIdType () {
   try {
     const query = `
       SELECT data_type 
       FROM information_schema.columns 
       WHERE table_name = 'creators' 
       AND column_name = 'id'
-    `;
-    
-    const result = await pool.query(query);
-    
+    `
+
+    const result = await pool.query(query)
+
     if (result.rows.length === 0) {
-      throw new Error('Creators table or id column not found');
+      throw new Error('Creators table or id column not found')
     }
-    
-    const dataType = result.rows[0].data_type;
-    console.log(`📋 Detected creators.id data type: ${dataType}`);
-    
+
+    const dataType = result.rows[0].data_type
+    console.log(`📋 Detected creators.id data type: ${dataType}`)
+
     // Map PostgreSQL data types to our migration types
     if (dataType === 'uuid') {
-      return 'UUID';
+      return 'UUID'
     } else if (dataType === 'integer' || dataType === 'bigint') {
-      return 'INTEGER';
+      return 'INTEGER'
     } else if (dataType === 'character varying' || dataType === 'text') {
-      return 'TEXT';
+      return 'TEXT'
     } else {
-      console.warn(`⚠️ Unknown data type: ${dataType}, defaulting to TEXT`);
-      return 'TEXT';
+      console.warn(`⚠️ Unknown data type: ${dataType}, defaulting to TEXT`)
+      return 'TEXT'
     }
-    
   } catch (error) {
-    console.error('Error detecting creator ID type:', error);
-    throw error;
+    console.error('Error detecting creator ID type:', error)
+    throw error
   }
 }
 
-async function runCallMigration() {
+async function runCallMigration () {
   try {
-    console.log('🚀 Starting call system database migration...');
-    
+    console.log('🚀 Starting call system database migration...')
+
     // First, detect the data type of creators.id
-    const creatorIdType = await detectCreatorIdType();
-    console.log(`✅ Will use ${creatorIdType} for creator_id foreign key`);
-    
+    const creatorIdType = await detectCreatorIdType()
+    console.log(`✅ Will use ${creatorIdType} for creator_id foreign key`)
+
     // Create the migration SQL with the correct data type
     const migrationSQL = `
 -- Calls table to track all outbound calls
@@ -127,105 +126,103 @@ CREATE TRIGGER update_calls_updated_at
     BEFORE UPDATE ON calls 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
-    `;
-    
-    console.log('📝 Executing migration...');
-    await pool.query(migrationSQL);
-    
-    console.log('✅ Migration completed successfully!');
-    console.log('📋 Created tables:');
-    console.log('   - calls (with creator_id type: ' + creatorIdType + ')');
-    console.log('   - call_events');
-    console.log('   - call_analytics');
-    console.log('📊 Created indexes for performance');
-    console.log('🔄 Created trigger for automatic timestamp updates');
-    
+    `
+
+    console.log('📝 Executing migration...')
+    await pool.query(migrationSQL)
+
+    console.log('✅ Migration completed successfully!')
+    console.log('📋 Created tables:')
+    console.log('   - calls (with creator_id type: ' + creatorIdType + ')')
+    console.log('   - call_events')
+    console.log('   - call_analytics')
+    console.log('📊 Created indexes for performance')
+    console.log('🔄 Created trigger for automatic timestamp updates')
+
     // Test basic functionality
-    console.log('\n🧪 Testing database connection...');
-    const testResult = await pool.query('SELECT COUNT(*) FROM calls');
-    console.log(`✅ Database test successful. Current calls count: ${testResult.rows[0].count}`);
-    
+    console.log('\n🧪 Testing database connection...')
+    const testResult = await pool.query('SELECT COUNT(*) FROM calls')
+    console.log(`✅ Database test successful. Current calls count: ${testResult.rows[0].count}`)
+
     // Test foreign key constraint
-    console.log('\n🔗 Testing foreign key constraint...');
-    const creatorTestResult = await pool.query('SELECT COUNT(*) FROM creators');
-    console.log(`✅ Creators table accessible. Total creators: ${creatorTestResult.rows[0].count}`);
-    
+    console.log('\n🔗 Testing foreign key constraint...')
+    const creatorTestResult = await pool.query('SELECT COUNT(*) FROM creators')
+    console.log(`✅ Creators table accessible. Total creators: ${creatorTestResult.rows[0].count}`)
+
     if (parseInt(creatorTestResult.rows[0].count) === 0) {
-      console.log('\n⚠️ Warning: No creators found in database.');
-      console.log('💡 You may want to create a test creator:');
-      console.log(`   INSERT INTO creators (creator_name, username, email, niche, tier, primary_platform)`);
-      console.log(`   VALUES ('Test Creator', 'test', 'test@test.com', 'tech_gaming', 'micro', 'youtube');`);
+      console.log('\n⚠️ Warning: No creators found in database.')
+      console.log('💡 You may want to create a test creator:')
+      console.log('   INSERT INTO creators (creator_name, username, email, niche, tier, primary_platform)')
+      console.log('   VALUES (\'Test Creator\', \'test\', \'test@test.com\', \'tech_gaming\', \'micro\', \'youtube\');')
     }
-    
   } catch (error) {
-    console.error('❌ Migration failed:', error);
-    console.error('\n🔧 Troubleshooting:');
-    console.error('1. Ensure PostgreSQL is running');
-    console.error('2. Check database connection settings in config/index.js');
-    console.error('3. Verify the creators table exists (required for foreign key)');
-    console.error('4. Check database user permissions');
-    
+    console.error('❌ Migration failed:', error)
+    console.error('\n🔧 Troubleshooting:')
+    console.error('1. Ensure PostgreSQL is running')
+    console.error('2. Check database connection settings in config/index.js')
+    console.error('3. Verify the creators table exists (required for foreign key)')
+    console.error('4. Check database user permissions')
+
     if (error.message.includes('uuid')) {
-      console.error('5. UUID type issue - this script should auto-detect and fix this');
+      console.error('5. UUID type issue - this script should auto-detect and fix this')
     }
-    
+
     if (error.message.includes('does not exist')) {
-      console.error('5. Make sure creators table exists in your database');
+      console.error('5. Make sure creators table exists in your database')
     }
   } finally {
-    await pool.end();
+    await pool.end()
   }
 }
 
 // Additional helper function to check current schema
-async function checkCurrentSchema() {
+async function checkCurrentSchema () {
   try {
-    console.log('🔍 Checking current database schema...');
-    
+    console.log('🔍 Checking current database schema...')
+
     // Check if calls table already exists
     const tableCheck = await pool.query(`
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_name IN ('calls', 'call_events', 'call_analytics')
-    `);
-    
+    `)
+
     if (tableCheck.rows.length > 0) {
-      console.log('⚠️ Some call tables already exist:');
+      console.log('⚠️ Some call tables already exist:')
       tableCheck.rows.forEach(row => {
-        console.log(`   - ${row.table_name}`);
-      });
-      console.log('\n🔄 Migration will use IF NOT EXISTS to avoid conflicts');
+        console.log(`   - ${row.table_name}`)
+      })
+      console.log('\n🔄 Migration will use IF NOT EXISTS to avoid conflicts')
     }
-    
+
     // Check creators table structure
     const creatorsCheck = await pool.query(`
       SELECT column_name, data_type, is_nullable
       FROM information_schema.columns 
       WHERE table_name = 'creators'
       ORDER BY ordinal_position
-    `);
-    
+    `)
+
     if (creatorsCheck.rows.length > 0) {
-      console.log('\n📋 Creators table structure:');
+      console.log('\n📋 Creators table structure:')
       creatorsCheck.rows.forEach(row => {
-        console.log(`   ${row.column_name}: ${row.data_type} (nullable: ${row.is_nullable})`);
-      });
+        console.log(`   ${row.column_name}: ${row.data_type} (nullable: ${row.is_nullable})`)
+      })
     } else {
-      console.log('\n❌ Creators table not found! Please create it first.');
+      console.log('\n❌ Creators table not found! Please create it first.')
     }
-    
   } catch (error) {
-    console.error('Error checking schema:', error);
+    console.error('Error checking schema:', error)
   }
 }
 
 if (require.main === module) {
   if (process.argv.includes('--check')) {
-    checkCurrentSchema().then(() => pool.end());
+    checkCurrentSchema().then(() => pool.end())
   } else {
-    runCallMigration();
+    runCallMigration()
   }
 }
 
-module.exports = { runCallMigration, checkCurrentSchema, detectCreatorIdType };
+module.exports = { runCallMigration, checkCurrentSchema, detectCreatorIdType }

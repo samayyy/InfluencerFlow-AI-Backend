@@ -1,10 +1,10 @@
 // controllers/search/aiSearchAdmin.js
-const express = require("express");
-const router = express.Router();
-const __constants = require("../../config/constants");
-const validationOfAPI = require("../../middlewares/validation");
-const embeddingService = require("../../services/ai/embeddingService");
-const creatorService = require("../../services/creators/creatorService");
+const express = require('express')
+const router = express.Router()
+const __constants = require('../../config/constants')
+const validationOfAPI = require('../../middlewares/validation')
+const embeddingService = require('../../services/ai/embeddingService')
+const creatorService = require('../../services/creators/creatorService')
 
 /**
  * @namespace -AI-SEARCH-ADMIN-MODULE-
@@ -19,139 +19,139 @@ const creatorService = require("../../services/creators/creatorService");
  */
 
 const initializeValidationSchema = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    batch_size: { type: "number", required: false },
-    force_recreate_index: { type: "boolean", required: false },
-    start_from_creator_id: { type: "string", required: false },
-  },
-};
+    batch_size: { type: 'number', required: false },
+    force_recreate_index: { type: 'boolean', required: false },
+    start_from_creator_id: { type: 'string', required: false }
+  }
+}
 
 const initializeValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, initializeValidationSchema, "body");
-};
+  return validationOfAPI(req, res, next, initializeValidationSchema, 'body')
+}
 
 const initializeSearchSystem = async (req, res) => {
   try {
     const {
       batch_size = 50,
       force_recreate_index = false,
-      start_from_creator_id = null,
-    } = req.body;
+      start_from_creator_id = null
+    } = req.body
 
-    console.log("🚀 Starting AI search system initialization...");
+    console.log('🚀 Starting AI search system initialization...')
 
     // Initialize Pinecone index
-    console.log("📊 Initializing Pinecone index...");
-    await embeddingService.initializePineconeIndex();
+    console.log('📊 Initializing Pinecone index...')
+    await embeddingService.initializePineconeIndex()
 
     // Get all creators from database
-    console.log("📋 Fetching creators from database...");
+    console.log('📋 Fetching creators from database...')
 
-    let allCreators = [];
-    let page = 1;
-    let hasMore = true;
-    let startProcessing = start_from_creator_id === null;
+    const allCreators = []
+    let page = 1
+    let hasMore = true
+    let startProcessing = start_from_creator_id === null
 
     while (hasMore) {
       const creatorsPage = await creatorService.getAllCreators(
         {},
         {
           page,
-          limit: batch_size,
+          limit: batch_size
         }
-      );
+      )
 
       if (creatorsPage.creators.length === 0) {
-        hasMore = false;
-        break;
+        hasMore = false
+        break
       }
 
       // If we have a starting creator ID, skip until we find it
       if (!startProcessing) {
         const startIndex = creatorsPage.creators.findIndex(
           (creator) => creator.id.toString() === start_from_creator_id
-        );
+        )
         if (startIndex !== -1) {
-          startProcessing = true;
-          allCreators.push(...creatorsPage.creators.slice(startIndex));
+          startProcessing = true
+          allCreators.push(...creatorsPage.creators.slice(startIndex))
         }
       } else {
-        allCreators.push(...creatorsPage.creators);
+        allCreators.push(...creatorsPage.creators)
       }
 
-      page++;
+      page++
 
       // Don't process more than 1000 creators at once to prevent memory issues
       if (allCreators.length >= 1000) {
-        break;
+        break
       }
     }
 
-    console.log(`📈 Found ${allCreators.length} creators to process`);
+    console.log(`📈 Found ${allCreators.length} creators to process`)
 
     if (allCreators.length === 0) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
         data: {
-          message: "No creators found to embed",
-          start_from_creator_id,
-        },
-      });
+          message: 'No creators found to embed',
+          start_from_creator_id
+        }
+      })
     }
 
     // Start embedding process
-    console.log("🤖 Starting embedding generation...");
+    console.log('🤖 Starting embedding generation...')
     const embeddingResults = await embeddingService.embedMultipleCreators(
       allCreators
-    );
+    )
 
     // Get index statistics
-    const indexStats = await embeddingService.getIndexStats();
+    const indexStats = await embeddingService.getIndexStats()
 
     const response = {
-      message: "AI search system initialization completed",
+      message: 'AI search system initialization completed',
       results: {
         total_creators_processed: allCreators.length,
         successful_embeddings: embeddingResults.successful,
         failed_embeddings: embeddingResults.failed,
         errors: embeddingResults.errors,
         batch_size_used: batch_size,
-        started_from_creator_id: start_from_creator_id,
+        started_from_creator_id: start_from_creator_id
       },
       index_stats: indexStats,
       next_steps:
         embeddingResults.failed > 0
           ? [
-              "Review failed embeddings",
-              "Consider re-running for failed creators",
-            ]
+            'Review failed embeddings',
+            'Consider re-running for failed creators'
+          ]
           : [
-              "AI search system is ready",
-              "Test with /api/search/health endpoint",
-            ],
-    };
+            'AI search system is ready',
+            'Test with /api/search/health endpoint'
+          ]
+    }
 
     if (embeddingResults.failed > 0) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.ACCEPTED,
-        data: response,
-      });
+        data: response
+      })
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: response,
-    });
+      data: response
+    })
   } catch (err) {
-    console.error("Error in initializeSearchSystem:", err);
+    console.error('Error in initializeSearchSystem:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -161,12 +161,12 @@ const initializeSearchSystem = async (req, res) => {
  */
 
 const updateEmbeddingValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    creatorId: { type: "string", required: true },
-  },
-};
+    creatorId: { type: 'string', required: true }
+  }
+}
 
 const updateEmbeddingValidation = (req, res, next) => {
   return validationOfAPI(
@@ -174,38 +174,38 @@ const updateEmbeddingValidation = (req, res, next) => {
     res,
     next,
     updateEmbeddingValidationSchema,
-    "params"
-  );
-};
+    'params'
+  )
+}
 
 const updateCreatorEmbedding = async (req, res) => {
   try {
-    const { creatorId } = req.params;
+    const { creatorId } = req.params
 
     // ✅ Validate UUID format
     const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(creatorId)) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
-        err: "Invalid UUID format for creator ID",
-      });
+        err: 'Invalid UUID format for creator ID'
+      })
     }
 
-    console.log(`🔄 Updating embedding for creator UUID: ${creatorId}`);
+    console.log(`🔄 Updating embedding for creator UUID: ${creatorId}`)
 
     // Get creator details
-    const creator = await creatorService.getCreatorById(creatorId);
+    const creator = await creatorService.getCreatorById(creatorId)
 
     if (!creator) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        data: { creator_id: creatorId, message: "Creator not found" },
-      });
+        data: { creator_id: creatorId, message: 'Creator not found' }
+      })
     }
 
     // Update embedding
-    await embeddingService.updateCreatorEmbedding(creatorId, creator);
+    await embeddingService.updateCreatorEmbedding(creatorId, creator)
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
@@ -213,17 +213,17 @@ const updateCreatorEmbedding = async (req, res) => {
         message: `Embedding updated successfully for creator: ${creator.creator_name}`,
         creator_id: creatorId,
         creator_name: creator.creator_name,
-        ai_enhanced: creator.ai_enhanced || false,
-      },
-    });
+        ai_enhanced: creator.ai_enhanced || false
+      }
+    })
   } catch (err) {
-    console.error("Error in updateCreatorEmbedding:", err);
+    console.error('Error in updateCreatorEmbedding:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -238,43 +238,43 @@ const deleteEmbeddingValidation = (req, res, next) => {
     res,
     next,
     updateEmbeddingValidationSchema,
-    "params"
-  );
-};
+    'params'
+  )
+}
 
 const deleteCreatorEmbedding = async (req, res) => {
   try {
-    const { creatorId } = req.params;
+    const { creatorId } = req.params
 
     // ✅ Validate UUID format
     const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
     if (!uuidRegex.test(creatorId)) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
-        err: "Invalid UUID format for creator ID",
-      });
+        err: 'Invalid UUID format for creator ID'
+      })
     }
 
-    console.log(`🗑️ Deleting embedding for creator UUID: ${creatorId}`);
+    console.log(`🗑️ Deleting embedding for creator UUID: ${creatorId}`)
 
-    await embeddingService.deleteCreatorEmbedding(creatorId);
+    await embeddingService.deleteCreatorEmbedding(creatorId)
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
         message: `Embedding deleted successfully for creator UUID: ${creatorId}`,
-        creator_id: creatorId,
-      },
-    });
+        creator_id: creatorId
+      }
+    })
   } catch (err) {
-    console.error("Error in deleteCreatorEmbedding:", err);
+    console.error('Error in deleteCreatorEmbedding:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -285,24 +285,24 @@ const deleteCreatorEmbedding = async (req, res) => {
 
 const getIndexStats = async (req, res) => {
   try {
-    await embeddingService.initializePineconeIndex();
-    const stats = await embeddingService.getIndexStats();
+    await embeddingService.initializePineconeIndex()
+    const stats = await embeddingService.getIndexStats()
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
         index_stats: stats,
-        timestamp: new Date().toISOString(),
-      },
-    });
+        timestamp: new Date().toISOString()
+      }
+    })
   } catch (err) {
-    console.error("Error in getIndexStats:", err);
+    console.error('Error in getIndexStats:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -312,90 +312,90 @@ const getIndexStats = async (req, res) => {
  */
 
 const bulkEmbedValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    creator_ids: { type: "array", required: true, minItems: 1 },
-  },
-};
+    creator_ids: { type: 'array', required: true, minItems: 1 }
+  }
+}
 
 const bulkEmbedValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, bulkEmbedValidationSchema, "body");
-};
+  return validationOfAPI(req, res, next, bulkEmbedValidationSchema, 'body')
+}
 
 const bulkEmbedCreators = async (req, res) => {
   try {
-    const { creator_ids } = req.body;
+    const { creator_ids } = req.body
 
     // ✅ Validate all UUIDs
     const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const invalidIds = creator_ids.filter((id) => !uuidRegex.test(id));
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    const invalidIds = creator_ids.filter((id) => !uuidRegex.test(id))
 
     if (invalidIds.length > 0) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
-        err: `Invalid UUID format for creator IDs: ${invalidIds.join(", ")}`,
-      });
+        err: `Invalid UUID format for creator IDs: ${invalidIds.join(', ')}`
+      })
     }
 
-    console.log(`📦 Bulk embedding ${creator_ids.length} creators...`);
+    console.log(`📦 Bulk embedding ${creator_ids.length} creators...`)
 
     // Fetch creators by UUID
     const creators = await Promise.all(
       creator_ids.map(async (id) => {
         try {
-          return await creatorService.getCreatorById(id);
+          return await creatorService.getCreatorById(id)
         } catch (error) {
-          console.error(`Error fetching creator ${id}:`, error);
-          return null;
+          console.error(`Error fetching creator ${id}:`, error)
+          return null
         }
       })
-    );
+    )
 
     // Filter out null results and track invalid UUIDs
-    const validCreators = creators.filter((creator) => creator !== null);
+    const validCreators = creators.filter((creator) => creator !== null)
     const invalidUUIDs = creator_ids.filter(
       (id, index) => creators[index] === null
-    );
+    )
 
     if (validCreators.length === 0) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
         data: {
-          message: "No valid creators found for the provided UUIDs",
-          invalid_uuids: invalidUUIDs,
-        },
-      });
+          message: 'No valid creators found for the provided UUIDs',
+          invalid_uuids: invalidUUIDs
+        }
+      })
     }
 
     // Embed creators
     const embeddingResults = await embeddingService.embedMultipleCreators(
       validCreators
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: `Bulk embedding completed`,
+        message: 'Bulk embedding completed',
         results: {
           requested_creators: creator_ids.length,
           valid_creators: validCreators.length,
           successful_embeddings: embeddingResults.successful,
           failed_embeddings: embeddingResults.failed,
           invalid_creator_uuids: invalidUUIDs,
-          errors: embeddingResults.errors,
-        },
-      },
-    });
+          errors: embeddingResults.errors
+        }
+      }
+    })
   } catch (err) {
-    console.error("Error in bulkEmbedCreators:", err);
+    console.error('Error in bulkEmbedCreators:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -405,90 +405,90 @@ const bulkEmbedCreators = async (req, res) => {
  */
 
 const rebuildIndexValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    confirm_rebuild: { type: "boolean", required: true },
-    backup_name: { type: "string", required: false },
-  },
-};
+    confirm_rebuild: { type: 'boolean', required: true },
+    backup_name: { type: 'string', required: false }
+  }
+}
 
 const rebuildIndexValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, rebuildIndexValidationSchema, "body");
-};
+  return validationOfAPI(req, res, next, rebuildIndexValidationSchema, 'body')
+}
 
 const rebuildIndex = async (req, res) => {
   try {
-    const { confirm_rebuild, backup_name } = req.body;
+    const { confirm_rebuild, backup_name } = req.body
 
     if (!confirm_rebuild) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
-        err: "Must confirm rebuild with confirm_rebuild: true",
-      });
+        err: 'Must confirm rebuild with confirm_rebuild: true'
+      })
     }
 
     console.log(
-      "⚠️ REBUILDING SEARCH INDEX - This will delete all existing embeddings!"
-    );
+      '⚠️ REBUILDING SEARCH INDEX - This will delete all existing embeddings!'
+    )
 
     // This is a dangerous operation - in production you'd want additional safeguards
     console.log(
-      "🗑️ Note: Index rebuild requested. In production, implement proper backup/restore logic."
-    );
+      '🗑️ Note: Index rebuild requested. In production, implement proper backup/restore logic.'
+    )
 
     // For now, we'll just reinitialize (which will reuse existing index if it exists)
-    await embeddingService.initializePineconeIndex();
+    await embeddingService.initializePineconeIndex()
 
     // Get all creators and re-embed them
-    const allCreators = [];
-    let page = 1;
-    let hasMore = true;
+    const allCreators = []
+    let page = 1
+    let hasMore = true
 
     while (hasMore) {
       const creatorsPage = await creatorService.getAllCreators(
         {},
         {
           page,
-          limit: 100,
+          limit: 100
         }
-      );
+      )
 
       if (creatorsPage.creators.length === 0) {
-        hasMore = false;
-        break;
+        hasMore = false
+        break
       }
 
-      allCreators.push(...creatorsPage.creators);
-      page++;
+      allCreators.push(...creatorsPage.creators)
+      page++
     }
 
-    console.log(`🔄 Re-embedding ${allCreators.length} creators...`);
+    console.log(`🔄 Re-embedding ${allCreators.length} creators...`)
     const embeddingResults = await embeddingService.embedMultipleCreators(
       allCreators
-    );
+    )
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Search index rebuilt successfully",
+        message: 'Search index rebuilt successfully',
         results: {
           total_creators: allCreators.length,
           successful_embeddings: embeddingResults.successful,
           failed_embeddings: embeddingResults.failed,
-          backup_name: backup_name || null,
+          backup_name: backup_name || null
         },
-        warning: "All previous embeddings have been replaced",
-      },
-    });
+        warning: 'All previous embeddings have been replaced'
+      }
+    })
   } catch (err) {
-    console.error("Error in rebuildIndex:", err);
+    console.error('Error in rebuildIndex:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -499,62 +499,62 @@ const rebuildIndex = async (req, res) => {
 
 const debugPineconeData = async (req, res) => {
   try {
-    await embeddingService.initializePineconeIndex();
+    await embeddingService.initializePineconeIndex()
 
     // Test query with very low threshold
-    const testQuery = "creator";
-    const vectorSearchService = require("../../services/search/vectorSearchService");
-    await vectorSearchService.initialize();
+    const testQuery = 'creator'
+    const vectorSearchService = require('../../services/search/vectorSearchService')
+    await vectorSearchService.initialize()
 
     const debugResults = await vectorSearchService.semanticSearch(testQuery, {
       topK: 5,
       minScore: 0.1, // Very low threshold
-      filters: {}, // No filters
-    });
+      filters: {} // No filters
+    })
 
     // Get index stats
-    const stats = await embeddingService.getIndexStats();
+    const stats = await embeddingService.getIndexStats()
 
     // Sample a few vectors to check metadata structure
-    const sampleVectorIds = ["creator_1", "creator_2", "creator_3"];
-    let sampleMetadata = {};
+    const sampleVectorIds = ['creator_1', 'creator_2', 'creator_3']
+    let sampleMetadata = {}
 
     try {
-      const fetchResult = await embeddingService.index.fetch(sampleVectorIds);
-      sampleMetadata = fetchResult.vectors || {};
+      const fetchResult = await embeddingService.index.fetch(sampleVectorIds)
+      sampleMetadata = fetchResult.vectors || {}
     } catch (error) {
-      console.log("Could not fetch sample vectors:", error.message);
+      console.log('Could not fetch sample vectors:', error.message)
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Debug information for Pinecone search",
+        message: 'Debug information for Pinecone search',
         index_stats: stats,
         test_search_results: {
           query: testQuery,
           results_found: debugResults.results.length,
-          sample_results: debugResults.results.slice(0, 3),
+          sample_results: debugResults.results.slice(0, 3)
         },
         sample_metadata: Object.keys(sampleMetadata).map((key) => ({
           vector_id: key,
-          metadata: sampleMetadata[key]?.metadata || null,
+          metadata: sampleMetadata[key]?.metadata || null
         })),
         debug_info: {
           total_vectors: stats.totalRecordCount,
           namespace_info: stats.namespaces,
-          dimension: stats.dimension,
-        },
-      },
-    });
+          dimension: stats.dimension
+        }
+      }
+    })
   } catch (err) {
-    console.error("Error in debugPineconeData:", err);
+    console.error('Error in debugPineconeData:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -AI-SEARCH-ADMIN-module-
@@ -564,12 +564,12 @@ const debugPineconeData = async (req, res) => {
  */
 
 const testSimilarityValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    query: { type: "string", required: true },
-  },
-};
+    query: { type: 'string', required: true }
+  }
+}
 
 const testSimilarityValidation = (req, res, next) => {
   return validationOfAPI(
@@ -577,37 +577,37 @@ const testSimilarityValidation = (req, res, next) => {
     res,
     next,
     testSimilarityValidationSchema,
-    "params"
-  );
-};
+    'params'
+  )
+}
 
 const testSimilarity = async (req, res) => {
   try {
-    const { query } = req.params;
-    const vectorSearchService = require("../../services/search/vectorSearchService");
-    await vectorSearchService.initialize();
+    const { query } = req.params
+    const vectorSearchService = require('../../services/search/vectorSearchService')
+    await vectorSearchService.initialize()
 
     // Test with different similarity thresholds
-    const thresholds = [0.1, 0.2, 0.3, 0.4, 0.5];
-    const results = {};
+    const thresholds = [0.1, 0.2, 0.3, 0.4, 0.5]
+    const results = {}
 
     for (const threshold of thresholds) {
       try {
         const searchResults = await vectorSearchService.semanticSearch(query, {
           topK: 5,
           minScore: threshold,
-          filters: {},
-        });
+          filters: {}
+        })
         results[`threshold_${threshold}`] = {
           results_found: searchResults.results.length,
           top_scores: searchResults.results.slice(0, 3).map((r) => ({
             creator_name: r.metadata?.creator_name,
             score: r.similarity_score,
-            niche: r.metadata?.niche,
-          })),
-        };
+            niche: r.metadata?.niche
+          }))
+        }
       } catch (error) {
-        results[`threshold_${threshold}`] = { error: error.message };
+        results[`threshold_${threshold}`] = { error: error.message }
       }
     }
 
@@ -617,38 +617,38 @@ const testSimilarity = async (req, res) => {
         query: query,
         similarity_tests: results,
         recommendation:
-          "Use the threshold that gives best balance of results vs relevance",
-      },
-    });
+          'Use the threshold that gives best balance of results vs relevance'
+      }
+    })
   } catch (err) {
-    console.error("Error in testSimilarity:", err);
+    console.error('Error in testSimilarity:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 // Route definitions
-router.post("/admin/initialize", initializeValidation, initializeSearchSystem);
+router.post('/admin/initialize', initializeValidation, initializeSearchSystem)
 router.put(
-  "/admin/embedding/:creatorId",
+  '/admin/embedding/:creatorId',
   updateEmbeddingValidation,
   updateCreatorEmbedding
-);
+)
 router.delete(
-  "/admin/embedding/:creatorId",
+  '/admin/embedding/:creatorId',
   deleteEmbeddingValidation,
   deleteCreatorEmbedding
-);
-router.get("/admin/stats", getIndexStats);
-router.post("/admin/bulk-embed", bulkEmbedValidation, bulkEmbedCreators);
-router.post("/admin/rebuild-index", rebuildIndexValidation, rebuildIndex);
-router.get("/admin/debug", debugPineconeData);
+)
+router.get('/admin/stats', getIndexStats)
+router.post('/admin/bulk-embed', bulkEmbedValidation, bulkEmbedCreators)
+router.post('/admin/rebuild-index', rebuildIndexValidation, rebuildIndex)
+router.get('/admin/debug', debugPineconeData)
 router.get(
-  "/admin/test-similarity/:query",
+  '/admin/test-similarity/:query',
   testSimilarityValidation,
   testSimilarity
-);
+)
 
-module.exports = router;
+module.exports = router

@@ -1,22 +1,22 @@
-const { Pool } = require("pg");
-const __config = require("../../config");
+const { Pool } = require('pg')
+const __config = require('../../config')
 
 class CreatorService {
-  constructor() {
+  constructor () {
     this.pool = new Pool({
       user: __config.postgres.user,
       host: __config.postgres.host,
       database: __config.postgres.database,
       password: __config.postgres.password,
       port: __config.postgres.port,
-      ssl: { rejectUnauthorized: false },
-    });
+      ssl: { rejectUnauthorized: false }
+    })
   }
 
-  async createCreator(creatorData) {
-    const client = await this.pool.connect();
+  async createCreator (creatorData) {
+    const client = await this.pool.connect()
     try {
-      await client.query("BEGIN");
+      await client.query('BEGIN')
 
       // Insert main creator data with AI enhancement support
       const creatorQuery = `
@@ -30,7 +30,7 @@ class CreatorService {
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
       ) RETURNING id
-    `;
+    `
 
       const creatorValues = [
         creatorData.creator_name,
@@ -62,23 +62,23 @@ class CreatorService {
         creatorData.personality_profile
           ? JSON.stringify(creatorData.personality_profile)
           : null,
-        creatorData.ai_enhanced || false,
-      ];
+        creatorData.ai_enhanced || false
+      ]
 
-      const creatorResult = await client.query(creatorQuery, creatorValues);
-      const creatorId = creatorResult.rows[0].id; // This is now a UUID
+      const creatorResult = await client.query(creatorQuery, creatorValues)
+      const creatorId = creatorResult.rows[0].id // This is now a UUID
 
       // Insert platform metrics (updated for UUID)
       if (creatorData.platform_metrics) {
         for (const platform in creatorData.platform_metrics) {
-          const metrics = creatorData.platform_metrics[platform];
+          const metrics = creatorData.platform_metrics[platform]
           const metricsQuery = `
           INSERT INTO creator_platform_metrics (
             creator_id, platform, follower_count, following_count, post_count,
             avg_views, avg_likes, avg_comments, avg_shares, engagement_rate,
             followers_gained_30d, total_videos, story_views_avg
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        `;
+        `
 
           await client.query(metricsQuery, [
             creatorId, // UUID
@@ -93,25 +93,25 @@ class CreatorService {
             metrics.engagement_rate,
             metrics.followers_gained_30d,
             metrics.total_videos,
-            metrics.story_views_avg,
-          ]);
+            metrics.story_views_avg
+          ])
         }
       }
 
       // Insert audience demographics with enhanced fields
       if (creatorData.audience_demographics) {
         for (const platform in creatorData.audience_demographics) {
-          const demo = creatorData.audience_demographics[platform];
+          const demo = creatorData.audience_demographics[platform]
           const demoQuery = `
           INSERT INTO creator_audience_demographics (
             creator_id, platform, age_13_17, age_18_24, age_25_34, age_35_44, age_45_plus,
             gender_male, gender_female, gender_other, top_countries, interests,
             specific_interests, related_topics, peak_hours
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-        `;
+        `
 
           // Handle enhanced audience insights from AI
-          const audienceInsights = creatorData.audience_insights || {};
+          const audienceInsights = creatorData.audience_insights || {}
 
           await client.query(demoQuery, [
             creatorId, // UUID
@@ -129,22 +129,22 @@ class CreatorService {
             // ✅ AI-enhanced fields
             audienceInsights.specific_interests || null,
             audienceInsights.related_topics || null,
-            audienceInsights.peak_hours || null,
-          ]);
+            audienceInsights.peak_hours || null
+          ])
         }
       }
 
       // Insert pricing data (updated for UUID)
       if (creatorData.pricing) {
         for (const platform in creatorData.pricing) {
-          const pricing = creatorData.pricing[platform];
+          const pricing = creatorData.pricing[platform]
           const pricingQuery = `
           INSERT INTO creator_pricing (
             creator_id, platform, sponsored_post_rate, story_mention_rate,
             video_integration_rate, brand_ambassadorship_monthly_rate,
             event_coverage_rate, currency
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        `;
+        `
 
           await client.query(pricingQuery, [
             creatorId, // UUID
@@ -154,8 +154,8 @@ class CreatorService {
             pricing.video_integration,
             pricing.brand_ambassadorship_monthly,
             pricing.event_coverage,
-            pricing.currency,
-          ]);
+            pricing.currency
+          ])
         }
       }
 
@@ -170,7 +170,7 @@ class CreatorService {
             creator_id, brand_name, collaboration_type, collaboration_date, 
             success_rating, campaign_description, ai_generated
           ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `;
+        `
 
           await client.query(collabQuery, [
             creatorId, // UUID
@@ -180,8 +180,8 @@ class CreatorService {
             collab.success_rating,
             collab.campaign_description ||
               `${collab.collaboration_type} campaign with ${collab.brand_name}`,
-            true, // ai_generated = true
-          ]);
+            true // ai_generated = true
+          ])
         }
       }
 
@@ -192,7 +192,7 @@ class CreatorService {
           creator_id, content_style, communication_tone, posting_frequency,
           collaboration_style, interaction_style, ai_generated
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `;
+      `
 
         await client.query(personalityQuery, [
           creatorId, // UUID
@@ -201,67 +201,67 @@ class CreatorService {
           creatorData.personality_profile.posting_frequency,
           creatorData.personality_profile.collaboration_style,
           creatorData.personality_profile.interaction_style,
-          true, // ai_generated = true
-        ]);
+          true // ai_generated = true
+        ])
       }
 
-      await client.query("COMMIT");
+      await client.query('COMMIT')
       console.log(
         `✅ Created creator with ID: ${creatorId} (AI-enhanced: ${creatorData.ai_enhanced})`
-      );
-      return creatorId; // Returns UUID string
+      )
+      return creatorId // Returns UUID string
     } catch (error) {
-      await client.query("ROLLBACK");
-      console.error("Error creating creator:", error);
-      throw error;
+      await client.query('ROLLBACK')
+      console.error('Error creating creator:', error)
+      throw error
     } finally {
-      client.release();
+      client.release()
     }
   }
 
-  async getAllCreators(filters = {}, pagination = {}) {
-    const { page = 1, limit = 20 } = pagination;
-    const offset = (page - 1) * limit;
+  async getAllCreators (filters = {}, pagination = {}) {
+    const { page = 1, limit = 20 } = pagination
+    const offset = (page - 1) * limit
 
-    let whereClause = "WHERE 1=1";
-    const values = [];
-    let paramCount = 0;
+    let whereClause = 'WHERE 1=1'
+    const values = []
+    let paramCount = 0
 
     // Build dynamic where clause based on filters
     if (filters.niche) {
-      paramCount++;
-      whereClause += ` AND c.niche = $${paramCount}`;
-      values.push(filters.niche);
+      paramCount++
+      whereClause += ` AND c.niche = $${paramCount}`
+      values.push(filters.niche)
     }
 
     if (filters.tier) {
-      paramCount++;
-      whereClause += ` AND c.tier = $${paramCount}`;
-      values.push(filters.tier);
+      paramCount++
+      whereClause += ` AND c.tier = $${paramCount}`
+      values.push(filters.tier)
     }
 
     if (filters.platform) {
-      paramCount++;
-      whereClause += ` AND c.primary_platform = $${paramCount}`;
-      values.push(filters.platform);
+      paramCount++
+      whereClause += ` AND c.primary_platform = $${paramCount}`
+      values.push(filters.platform)
     }
 
     if (filters.min_followers) {
-      paramCount++;
-      whereClause += ` AND cpm.follower_count >= $${paramCount}`;
-      values.push(filters.min_followers);
+      paramCount++
+      whereClause += ` AND cpm.follower_count >= $${paramCount}`
+      values.push(filters.min_followers)
     }
 
     if (filters.max_followers) {
-      paramCount++;
-      whereClause += ` AND cpm.follower_count <= $${paramCount}`;
-      values.push(filters.max_followers);
+      paramCount++
+      whereClause += ` AND cpm.follower_count <= $${paramCount}`
+      values.push(filters.max_followers)
     }
 
     if (filters.min_engagement) {
-      paramCount++;
-      whereClause += ` AND cpm.engagement_rate >= $${paramCount}`;
-      values.push(filters.min_engagement);
+      paramCount++
+      whereClause += ` AND cpm.engagement_rate >= $${paramCount}`
+      values.push(filters.min_engagement)
     }
 
     const query = `
@@ -282,11 +282,11 @@ class CreatorService {
       GROUP BY c.id
       ORDER BY c.created_at DESC
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-    `;
+    `
 
-    values.push(limit, offset);
+    values.push(limit, offset)
 
-    const result = await this.pool.query(query, values);
+    const result = await this.pool.query(query, values)
 
     // Get total count for pagination
     const countQuery = `
@@ -294,10 +294,10 @@ class CreatorService {
       FROM creators c
       LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
       ${whereClause}
-    `;
+    `
 
-    const countResult = await this.pool.query(countQuery, values.slice(0, -2));
-    const total = parseInt(countResult.rows[0].total);
+    const countResult = await this.pool.query(countQuery, values.slice(0, -2))
+    const total = parseInt(countResult.rows[0].total)
 
     return {
       creators: result.rows,
@@ -305,12 +305,12 @@ class CreatorService {
         page: parseInt(page),
         limit: parseInt(limit),
         total,
-        pages: Math.ceil(total / limit),
-      },
-    };
+        pages: Math.ceil(total / limit)
+      }
+    }
   }
 
-  async getCreatorById(id) {
+  async getCreatorById (id) {
     const query = `
     SELECT 
       c.*,
@@ -367,15 +367,15 @@ class CreatorService {
     LEFT JOIN creator_pricing cp ON c.id = cp.creator_id
     WHERE c.id = $1::UUID
     GROUP BY c.id
-  `;
+  `
 
-    const result = await this.pool.query(query, [id]);
-    return result.rows[0] || null;
+    const result = await this.pool.query(query, [id])
+    return result.rows[0] || null
   }
 
-  async searchCreators(searchTerm, filters = {}, pagination = {}) {
-    const { page = 1, limit = 20 } = pagination;
-    const offset = (page - 1) * limit;
+  async searchCreators (searchTerm, filters = {}, pagination = {}) {
+    const { page = 1, limit = 20 } = pagination
+    const offset = (page - 1) * limit
 
     let whereClause = `
       WHERE (
@@ -384,22 +384,22 @@ class CreatorService {
         to_tsvector('english', c.bio) @@ plainto_tsquery('english', $1) OR
         c.niche ILIKE $2
       )
-    `;
+    `
 
-    const values = [searchTerm, `%${searchTerm}%`];
-    let paramCount = 2;
+    const values = [searchTerm, `%${searchTerm}%`]
+    let paramCount = 2
 
     // Add additional filters
     if (filters.niche) {
-      paramCount++;
-      whereClause += ` AND c.niche = $${paramCount}`;
-      values.push(filters.niche);
+      paramCount++
+      whereClause += ` AND c.niche = $${paramCount}`
+      values.push(filters.niche)
     }
 
     if (filters.tier) {
-      paramCount++;
-      whereClause += ` AND c.tier = $${paramCount}`;
-      values.push(filters.tier);
+      paramCount++
+      whereClause += ` AND c.tier = $${paramCount}`
+      values.push(filters.tier)
     }
 
     const query = `
@@ -419,15 +419,15 @@ class CreatorService {
       GROUP BY c.id
       ORDER BY search_rank DESC, c.created_at DESC
       LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-    `;
+    `
 
-    values.push(limit, offset);
+    values.push(limit, offset)
 
-    const result = await this.pool.query(query, values);
-    return result.rows;
+    const result = await this.pool.query(query, values)
+    return result.rows
   }
 
-  async getCreatorsByNiche(niche, limit = 10) {
+  async getCreatorsByNiche (niche, limit = 10) {
     const query = `
       SELECT c.*, cpm.follower_count, cpm.engagement_rate
       FROM creators c
@@ -435,42 +435,42 @@ class CreatorService {
       WHERE c.niche = $1
       ORDER BY cpm.follower_count DESC
       LIMIT $2
-    `;
+    `
 
-    const result = await this.pool.query(query, [niche, limit]);
-    return result.rows;
+    const result = await this.pool.query(query, [niche, limit])
+    return result.rows
   }
 
-  async updateCreator(id, updateData) {
-    const setClause = [];
-    const values = [];
-    let paramCount = 0;
+  async updateCreator (id, updateData) {
+    const setClause = []
+    const values = []
+    let paramCount = 0
 
     for (const [key, value] of Object.entries(updateData)) {
-      paramCount++;
-      setClause.push(`${key} = $${paramCount}`);
-      values.push(value);
+      paramCount++
+      setClause.push(`${key} = $${paramCount}`)
+      values.push(value)
     }
 
-    paramCount++;
-    values.push(id);
+    paramCount++
+    values.push(id)
 
     const query = `
       UPDATE creators 
-      SET ${setClause.join(", ")}, updated_at = NOW()
+      SET ${setClause.join(', ')}, updated_at = NOW()
       WHERE id = $${paramCount}
       RETURNING *
-    `;
+    `
 
-    const result = await this.pool.query(query, values);
-    return result.rows[0];
+    const result = await this.pool.query(query, values)
+    return result.rows[0]
   }
 
-  async deleteCreator(id) {
-    const query = "DELETE FROM creators WHERE id = $1 RETURNING id";
-    const result = await this.pool.query(query, [id]);
-    return result.rows[0];
+  async deleteCreator (id) {
+    const query = 'DELETE FROM creators WHERE id = $1 RETURNING id'
+    const result = await this.pool.query(query, [id])
+    return result.rows[0]
   }
 }
 
-module.exports = new CreatorService();
+module.exports = new CreatorService()

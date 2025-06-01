@@ -1,9 +1,9 @@
 // controllers/analytics/searchAnalytics.js
-const express = require("express");
-const router = express.Router();
-const __constants = require("../../config/constants");
-const validationOfAPI = require("../../middlewares/validation");
-const searchAnalyticsService = require("../../services/analytics/searchAnalyticsService");
+const express = require('express')
+const router = express.Router()
+const __constants = require('../../config/constants')
+const validationOfAPI = require('../../middlewares/validation')
+const searchAnalyticsService = require('../../services/analytics/searchAnalyticsService')
 
 /**
  * @namespace -SEARCH-ANALYTICS-MODULE-
@@ -21,57 +21,56 @@ const searchAnalyticsService = require("../../services/analytics/searchAnalytics
  */
 
 const analyticsValidationSchema = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    start_date: { type: "string", required: false },
-    end_date: { type: "string", required: false },
-    days: { type: "string", required: false }
-  },
-};
+    start_date: { type: 'string', required: false },
+    end_date: { type: 'string', required: false },
+    days: { type: 'string', required: false }
+  }
+}
 
 const analyticsValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, analyticsValidationSchema, "query");
-};
+  return validationOfAPI(req, res, next, analyticsValidationSchema, 'query')
+}
 
 const getSearchAnalytics = async (req, res) => {
   try {
-    const { start_date, end_date, days = "7" } = req.query;
-    
-    let startDate, endDate;
-    
+    const { start_date, end_date, days = '7' } = req.query
+
+    let startDate, endDate
+
     if (start_date) {
-      startDate = start_date;
-      endDate = end_date || start_date;
+      startDate = start_date
+      endDate = end_date || start_date
     } else {
       // Default to last N days
-      const daysBack = parseInt(days);
-      endDate = new Date().toISOString().split('T')[0];
-      startDate = new Date(Date.now() - (daysBack - 1) * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const daysBack = parseInt(days)
+      endDate = new Date().toISOString().split('T')[0]
+      startDate = new Date(Date.now() - (daysBack - 1) * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     }
 
-    const analytics = await searchAnalyticsService.getAnalytics(startDate, endDate);
-    
+    const analytics = await searchAnalyticsService.getAnalytics(startDate, endDate)
+
     if (analytics.error) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.FAILED,
         err: analytics.error
-      });
+      })
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: analytics,
-    });
-
+      data: analytics
+    })
   } catch (err) {
-    console.error("Error in getSearchAnalytics:", err);
+    console.error('Error in getSearchAnalytics:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -SEARCH-ANALYTICS-module-
@@ -85,28 +84,27 @@ const getSearchAnalytics = async (req, res) => {
 
 const getRealTimeStats = async (req, res) => {
   try {
-    const stats = await searchAnalyticsService.getRealTimeStats();
-    
+    const stats = await searchAnalyticsService.getRealTimeStats()
+
     if (stats.error) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.FAILED,
         err: stats.error
-      });
+      })
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: stats,
-    });
-
+      data: stats
+    })
   } catch (err) {
-    console.error("Error in getRealTimeStats:", err);
+    console.error('Error in getRealTimeStats:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -SEARCH-ANALYTICS-module-
@@ -119,43 +117,42 @@ const getRealTimeStats = async (req, res) => {
  */
 
 const reportValidationSchema = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    days: { type: "string", required: false }
-  },
-};
+    days: { type: 'string', required: false }
+  }
+}
 
 const reportValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, reportValidationSchema, "query");
-};
+  return validationOfAPI(req, res, next, reportValidationSchema, 'query')
+}
 
 const getPerformanceReport = async (req, res) => {
   try {
-    const { days = "7" } = req.query;
-    
-    const report = await searchAnalyticsService.generatePerformanceReport(parseInt(days));
-    
+    const { days = '7' } = req.query
+
+    const report = await searchAnalyticsService.generatePerformanceReport(parseInt(days))
+
     if (report.error) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.FAILED,
         err: report.error
-      });
+      })
     }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: report,
-    });
-
+      data: report
+    })
   } catch (err) {
-    console.error("Error in getPerformanceReport:", err);
+    console.error('Error in getPerformanceReport:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -SEARCH-ANALYTICS-module-
@@ -168,20 +165,20 @@ const getPerformanceReport = async (req, res) => {
  */
 
 const interactionValidationSchema = {
-  type: "object",
+  type: 'object',
   required: true,
   properties: {
-    search_id: { type: "string", required: true },
-    creator_id: { type: "string", required: true },
-    type: { type: "string", required: true },
-    rank: { type: "number", required: false },
-    session_id: { type: "string", required: false }
-  },
-};
+    search_id: { type: 'string', required: true },
+    creator_id: { type: 'string', required: true },
+    type: { type: 'string', required: true },
+    rank: { type: 'number', required: false },
+    session_id: { type: 'string', required: false }
+  }
+}
 
 const interactionValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, interactionValidationSchema, "body");
-};
+  return validationOfAPI(req, res, next, interactionValidationSchema, 'body')
+}
 
 const logResultInteraction = async (req, res) => {
   try {
@@ -189,26 +186,25 @@ const logResultInteraction = async (req, res) => {
       ...req.body,
       session_id: req.body.session_id || req.ip,
       timestamp: new Date()
-    };
+    }
 
-    await searchAnalyticsService.logResultInteraction(interactionData);
+    await searchAnalyticsService.logResultInteraction(interactionData)
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: "Interaction logged successfully",
+        message: 'Interaction logged successfully',
         interaction_id: `int_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-      },
-    });
-
+      }
+    })
   } catch (err) {
-    console.error("Error in logResultInteraction:", err);
+    console.error('Error in logResultInteraction:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 /**
  * @memberof -SEARCH-ANALYTICS-module-
@@ -221,56 +217,55 @@ const logResultInteraction = async (req, res) => {
  */
 
 const trendsValidationSchema = {
-  type: "object",
+  type: 'object',
   required: false,
   properties: {
-    period: { type: "string", required: false }, // 'today', 'week', 'month'
-    limit: { type: "string", required: false }
-  },
-};
+    period: { type: 'string', required: false }, // 'today', 'week', 'month'
+    limit: { type: 'string', required: false }
+  }
+}
 
 const trendsValidation = (req, res, next) => {
-  return validationOfAPI(req, res, next, trendsValidationSchema, "query");
-};
+  return validationOfAPI(req, res, next, trendsValidationSchema, 'query')
+}
 
 const getSearchTrends = async (req, res) => {
   try {
-    const { period = "week", limit = "10" } = req.query;
-    
+    const { period = 'week', limit = '10' } = req.query
+
     // This would be implemented in the analytics service
     const trends = {
       period,
       popular_queries: [
-        { query_pattern: "tech_gaming creators", count: 45, avg_results: 12 },
-        { query_pattern: "beauty_fashion under $500", count: 32, avg_results: 8 },
-        { query_pattern: "fitness influencers", count: 28, avg_results: 15 },
-        { query_pattern: "travel bloggers", count: 22, avg_results: 10 },
-        { query_pattern: "food creators", count: 18, avg_results: 14 }
+        { query_pattern: 'tech_gaming creators', count: 45, avg_results: 12 },
+        { query_pattern: 'beauty_fashion under $500', count: 32, avg_results: 8 },
+        { query_pattern: 'fitness influencers', count: 28, avg_results: 15 },
+        { query_pattern: 'travel bloggers', count: 22, avg_results: 10 },
+        { query_pattern: 'food creators', count: 18, avg_results: 14 }
       ].slice(0, parseInt(limit)),
-      trending_niches: ["tech_gaming", "beauty_fashion", "fitness_health"],
-      peak_search_times: ["14:00-16:00", "19:00-21:00"],
+      trending_niches: ['tech_gaming', 'beauty_fashion', 'fitness_health'],
+      peak_search_times: ['14:00-16:00', '19:00-21:00'],
       generated_at: new Date().toISOString()
-    };
+    }
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
-      data: trends,
-    });
-
+      data: trends
+    })
   } catch (err) {
-    console.error("Error in getSearchTrends:", err);
+    console.error('Error in getSearchTrends:', err)
     return res.sendJson({
       type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
-      err: err.message || err,
-    });
+      err: err.message || err
+    })
   }
-};
+}
 
 // Route definitions
-router.get("/search", analyticsValidation, getSearchAnalytics);
-router.get("/search/realtime", getRealTimeStats);
-router.get("/search/report", reportValidation, getPerformanceReport);
-router.get("/search/trends", trendsValidation, getSearchTrends);
-router.post("/search/interaction", interactionValidation, logResultInteraction);
+router.get('/search', analyticsValidation, getSearchAnalytics)
+router.get('/search/realtime', getRealTimeStats)
+router.get('/search/report', reportValidation, getPerformanceReport)
+router.get('/search/trends', trendsValidation, getSearchTrends)
+router.post('/search/interaction', interactionValidation, logResultInteraction)
 
-module.exports = router;
+module.exports = router
