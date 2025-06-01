@@ -50,6 +50,7 @@
     "bcrypt": "^5.1.0",
     "body-parser": "^1.20.1",
     "cors": "^2.8.5",
+    "crypto": "^1.0.1",
     "csv-parser": "^3.2.0",
     "docusign-esign": "^8.1.0",
     "dotenv": "^16.5.0",
