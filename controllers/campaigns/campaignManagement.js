@@ -22,7 +22,6 @@ const createCampaignValidation = {
   type: 'object',
   required: true,
   properties: {
-    brand_id: { type: 'string', required: true },
     campaign_name: {
       type: 'string',
       required: true,
@@ -50,7 +49,8 @@ const createCampaign = async (req, res) => {
   try {
     const userId = req.user.id
     const campaignData = req.body
-    const brandId = campaignData.brand_id
+    const brandData =  await brandService.getBrandByUserId(userId)
+    const brandId = brandData ? brandData.id : null
 
     // Validate campaign type
     const validCampaignTypes = [

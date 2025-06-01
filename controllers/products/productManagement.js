@@ -22,7 +22,6 @@ const createProductValidation = {
   type: 'object',
   required: true,
   properties: {
-    brand_id: { type: 'string', required: true },
     product_name: {
       type: 'string',
       required: true,
@@ -47,23 +46,24 @@ const createProduct = async (req, res) => {
   try {
     const userId = req.user.id
     const productData = req.body
-    const brandId = productData.brand_id
 
     // Verify brand ownership
-    const brand = await brandService.getBrandById(brandId)
-    if (!brand) {
-      return res.sendJson({
-        type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        err: 'Brand not found'
-      })
-    }
+    const brand = await brandService.getBrandByUserId(userId)
+    const brandId = brand ? brand.id : null
+    // const brand = await brandService.getBrandById(brandId)
+    // if (!brand) {
+    //   return res.sendJson({
+    //     type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
+    //     err: 'Brand not found'
+    //   })
+    // }
 
-    if (brand.user_id !== userId) {
-      return res.sendJson({
-        type: __constants.RESPONSE_MESSAGES.ACCESS_DENIED,
-        err: 'Not authorized to add products to this brand'
-      })
-    }
+    // if (brand.user_id !== userId) {
+    //   return res.sendJson({
+    //     type: __constants.RESPONSE_MESSAGES.ACCESS_DENIED,
+    //     err: 'Not authorized to add products to this brand'
+    //   })
+    // }
 
     console.log(
       `Creating product for brand ${brandId}: ${productData.product_name}`

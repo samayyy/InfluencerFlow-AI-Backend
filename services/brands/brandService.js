@@ -264,9 +264,9 @@ class BrandService {
       if (brand.contact_info) {
         brand.contact_info = JSON.parse(brand.contact_info)
       }
-      if (brand.target_audience) {
-        brand.target_audience = JSON.parse(brand.target_audience)
-      }
+      // if (brand.target_audience) {
+      //   brand.target_audience = JSON.parse(brand.target_audience)
+      // }
 
       // Get brand preferences if requested
       if (includePreferences) {

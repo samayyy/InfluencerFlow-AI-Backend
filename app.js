@@ -87,6 +87,7 @@ class httpApiWorker {
     vm.app.use(cors({
       exposedHeaders: ['Content-disposition']
     }))
+    
     authMiddleware.initialize(vm.app)
     require('./routes')(vm.app)
 
