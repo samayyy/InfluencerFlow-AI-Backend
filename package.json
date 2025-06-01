@@ -49,6 +49,8 @@
     "bcrypt": "^5.1.0",
     "body-parser": "^1.20.1",
     "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "docusign-esign": "^8.1.0",
     "dotenv": "^16.5.0",
     "elastic-apm-node": "^3.41.0",
     "express": "^4.18.2",
@@ -61,10 +63,12 @@
     "mongoose": "^6.8.1",
     "mongoose-timestamp-plugin": "^0.0.1",
     "node-vault": "^0.9.22",
+    "nodemailer": "^7.0.3",
     "openai": "^4.104.0",
     "passport": "^0.6.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.16.0",
-    "redis": "^3.0.2"
+    "redis": "^3.0.2",
+    "twilio": "^5.7.0"
   }
 }
