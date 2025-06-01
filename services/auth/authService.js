@@ -85,7 +85,7 @@ class AuthService {
     try {
       await client.query('BEGIN');
 
-      const { id: googleId, email, given_name, family_name, picture } = googleProfile;
+      const { sub: googleId, email, given_name, family_name, picture } = googleProfile;
 
       // Check if user exists
       let userQuery = 'SELECT * FROM users WHERE google_id = $1 OR email = $2';
