@@ -315,6 +315,7 @@ Return as JSON object with these exact keys: content_style, communication_tone, 
           this.generateCreatorPersonality(creator),
         ]);
 
+        // ✅ FIXED: Properly set ai_enhanced flag
         const enhancedCreator = {
           ...creator,
           bio: bio,
@@ -322,6 +323,7 @@ Return as JSON object with these exact keys: content_style, communication_tone, 
           brand_collaborations: brandCollabs,
           audience_insights: audienceInsights,
           personality_profile: personality,
+          ai_enhanced: true, // ✅ Ensure this is always set to true
         };
 
         enhancedCreators.push(enhancedCreator);
@@ -335,12 +337,15 @@ Return as JSON object with these exact keys: content_style, communication_tone, 
           `Error enhancing creator ${creator.creator_name}:`,
           error
         );
-        // Add creator without AI enhancements if there's an error
-        enhancedCreators.push({
+
+        // ✅ FIXED: Add creator with ai_enhanced: false for failures
+        const fallbackCreator = {
           ...creator,
-          ai_enhanced: false,
-          error: error.message,
-        });
+          ai_enhanced: false, // Mark as failed AI enhancement
+          ai_error: error.message,
+        };
+
+        enhancedCreators.push(fallbackCreator);
       }
 
       // Add delay to respect rate limits
@@ -349,8 +354,11 @@ Return as JSON object with these exact keys: content_style, communication_tone, 
       }
     }
 
+    const successfulEnhancements = enhancedCreators.filter(
+      (c) => c.ai_enhanced
+    ).length;
     console.log(
-      `✅ Completed AI enhancement for ${enhancedCreators.length} creators`
+      `✅ Completed AI enhancement for ${enhancedCreators.length} creators (${successfulEnhancements} successful AI enhancements)`
     );
     return enhancedCreators;
   }

@@ -200,19 +200,17 @@ class VectorSearchService {
 
       const { topK = 10, filters = {}, includeOriginal = false } = options;
 
-      console.log(`Finding creators similar to creator ID: ${creatorId}`);
+      console.log(`Finding creators similar to creator UUID: ${creatorId}`);
 
-      // Get the creator's vector from Pinecone
-      const fetchResult = await this.index.fetch([`creator_${creatorId}`]);
+      // ✅ Get the creator's vector from Pinecone (UUID format)
+      const vectorId = `creator_${creatorId}`;
+      const fetchResult = await this.index.fetch([vectorId]);
 
-      if (
-        !fetchResult.vectors ||
-        !fetchResult.vectors[`creator_${creatorId}`]
-      ) {
+      if (!fetchResult.vectors || !fetchResult.vectors[vectorId]) {
         throw new Error(`Creator ${creatorId} not found in vector index`);
       }
 
-      const creatorVector = fetchResult.vectors[`creator_${creatorId}`].values;
+      const creatorVector = fetchResult.vectors[vectorId].values;
       const pineconeFilter = this.buildPineconeFilter(filters);
 
       // Search for similar vectors
@@ -253,7 +251,9 @@ class VectorSearchService {
         metadata: match.metadata || {},
       }));
 
-      console.log(`Found ${similarCreators.length} similar creators`);
+      console.log(
+        `Found ${similarCreators.length} similar creators to UUID: ${creatorId}`
+      );
 
       return {
         results: similarCreators,

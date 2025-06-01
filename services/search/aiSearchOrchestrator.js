@@ -208,22 +208,30 @@ class AISearchOrchestrator {
     const { filters, maxResults } = options;
 
     if (queryAnalysis.similar_to_creator) {
-      // Find creator by name first
-      const potentialCreators = await creatorService.searchCreators(
-        queryAnalysis.similar_to_creator,
-        {},
-        { limit: 5 }
-      );
-
-      if (potentialCreators.length > 0) {
-        const referenceCreator = potentialCreators[0];
-        return await vectorSearchService.findSimilarCreators(
-          referenceCreator.id,
-          {
-            filters,
-            topK: maxResults,
-          }
+      try {
+        // Find creator by name first
+        const potentialCreators = await creatorService.searchCreators(
+          queryAnalysis.similar_to_creator,
+          {},
+          { limit: 5 }
         );
+
+        if (potentialCreators.length > 0) {
+          const referenceCreator = potentialCreators[0];
+          console.log(
+            `🔍 Finding creators similar to: ${referenceCreator.creator_name} (UUID: ${referenceCreator.id})`
+          );
+
+          return await vectorSearchService.findSimilarCreators(
+            referenceCreator.id, // This is now a UUID
+            {
+              filters,
+              topK: maxResults,
+            }
+          );
+        }
+      } catch (error) {
+        console.error("Error in similarity search:", error);
       }
     }
 
@@ -384,12 +392,15 @@ class AISearchOrchestrator {
   // Extract metadata from traditional search creator object
   extractMetadataFromCreator(creator) {
     return {
-      creator_id: creator.id.toString(),
-      creator_name: creator.creator_name,
-      niche: creator.niche,
-      tier: creator.tier,
-      primary_platform: creator.primary_platform,
-      location_country: creator.location_country,
+      creator_id: creator.id
+        ? creator.id.toString()
+        : String(creator.id || "unknown"),
+      creator_name: creator.creator_name || "Unknown",
+      niche: creator.niche || "general",
+      tier: creator.tier || "micro",
+      primary_platform: creator.primary_platform || "instagram",
+      location_country: creator.location_country || "Unknown",
+      ai_enhanced: creator.ai_enhanced || false,
       follower_count:
         creator.platform_metrics?.[creator.primary_platform]?.follower_count ||
         0,
@@ -403,44 +414,69 @@ class AISearchOrchestrator {
   async enrichResultsWithCreatorData(searchResults, limit) {
     const creatorIds = searchResults
       .slice(0, limit)
-      .map((result) => result.creator_id);
+      .map((result) => result.creator_id)
+      .filter((id) => id && id !== "unknown"); // Filter out invalid IDs
 
     if (creatorIds.length === 0) {
+      console.warn("No valid creator IDs found in search results");
       return [];
     }
 
     try {
-      // Fetch full creator details
+      console.log(
+        `📋 Enriching ${creatorIds.length} creators with full data...`
+      );
+
+      // ✅ Fetch full creator details using UUIDs
       const creators = await Promise.all(
-        creatorIds.map((id) => creatorService.getCreatorById(id))
+        creatorIds.map(async (id) => {
+          try {
+            // Ensure ID is properly formatted for UUID query
+            const creator = await creatorService.getCreatorById(id);
+            return creator;
+          } catch (error) {
+            console.error(
+              `Failed to fetch creator with UUID ${id}:`,
+              error.message
+            );
+            return null;
+          }
+        })
       );
 
       // Combine search metadata with creator data
-      return searchResults
-        .slice(0, limit)
-        .map((result, index) => {
-          const creator = creators[index];
+      const enrichedResults = [];
 
-          if (!creator) {
-            return {
-              ...result,
-              creator_data: null,
-              error: "Creator data not found",
-            };
-          }
+      for (let i = 0; i < Math.min(searchResults.length, limit); i++) {
+        const searchResult = searchResults[i];
+        const creator = creators[i];
 
-          return {
-            search_score: result.similarity_score || result.combined_score,
-            search_rank: index + 1,
-            creator_data: creator,
-            search_metadata: {
-              source: result.source || "vector",
-              similarity_score: result.similarity_score,
-              combined_score: result.combined_score,
-            },
-          };
-        })
-        .filter((result) => result.creator_data !== null);
+        if (!creator) {
+          console.warn(
+            `Creator not found for UUID: ${searchResult.creator_id}`
+          );
+          continue; // Skip missing creators instead of including error
+        }
+
+        enrichedResults.push({
+          search_score:
+            searchResult.similarity_score || searchResult.combined_score,
+          search_rank: i + 1,
+          creator_data: creator,
+          search_metadata: {
+            source: searchResult.source || "vector",
+            similarity_score: searchResult.similarity_score,
+            combined_score: searchResult.combined_score,
+            creator_uuid: creator.id,
+            ai_enhanced: creator.ai_enhanced || false,
+          },
+        });
+      }
+
+      console.log(
+        `✅ Successfully enriched ${enrichedResults.length} creator results`
+      );
+      return enrichedResults;
     } catch (error) {
       console.error("Error enriching results with creator data:", error);
 
@@ -451,6 +487,7 @@ class AISearchOrchestrator {
         creator_id: result.creator_id,
         metadata: result.metadata,
         error: "Failed to load creator details",
+        creator_uuid: result.creator_id,
       }));
     }
   }

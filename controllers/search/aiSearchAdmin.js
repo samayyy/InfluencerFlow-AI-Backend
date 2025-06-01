@@ -182,7 +182,17 @@ const updateCreatorEmbedding = async (req, res) => {
   try {
     const { creatorId } = req.params;
 
-    console.log(`🔄 Updating embedding for creator ID: ${creatorId}`);
+    // ✅ Validate UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(creatorId)) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
+        err: "Invalid UUID format for creator ID",
+      });
+    }
+
+    console.log(`🔄 Updating embedding for creator UUID: ${creatorId}`);
 
     // Get creator details
     const creator = await creatorService.getCreatorById(creatorId);
@@ -190,7 +200,7 @@ const updateCreatorEmbedding = async (req, res) => {
     if (!creator) {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
-        data: { creator_id: creatorId },
+        data: { creator_id: creatorId, message: "Creator not found" },
       });
     }
 
@@ -203,6 +213,7 @@ const updateCreatorEmbedding = async (req, res) => {
         message: `Embedding updated successfully for creator: ${creator.creator_name}`,
         creator_id: creatorId,
         creator_name: creator.creator_name,
+        ai_enhanced: creator.ai_enhanced || false,
       },
     });
   } catch (err) {
@@ -235,14 +246,24 @@ const deleteCreatorEmbedding = async (req, res) => {
   try {
     const { creatorId } = req.params;
 
-    console.log(`🗑️ Deleting embedding for creator ID: ${creatorId}`);
+    // ✅ Validate UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(creatorId)) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
+        err: "Invalid UUID format for creator ID",
+      });
+    }
+
+    console.log(`🗑️ Deleting embedding for creator UUID: ${creatorId}`);
 
     await embeddingService.deleteCreatorEmbedding(creatorId);
 
     res.sendJson({
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
-        message: `Embedding deleted successfully for creator ID: ${creatorId}`,
+        message: `Embedding deleted successfully for creator UUID: ${creatorId}`,
         creator_id: creatorId,
       },
     });
@@ -306,16 +327,35 @@ const bulkEmbedCreators = async (req, res) => {
   try {
     const { creator_ids } = req.body;
 
+    // ✅ Validate all UUIDs
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const invalidIds = creator_ids.filter((id) => !uuidRegex.test(id));
+
+    if (invalidIds.length > 0) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
+        err: `Invalid UUID format for creator IDs: ${invalidIds.join(", ")}`,
+      });
+    }
+
     console.log(`📦 Bulk embedding ${creator_ids.length} creators...`);
 
-    // Fetch creators
+    // Fetch creators by UUID
     const creators = await Promise.all(
-      creator_ids.map((id) => creatorService.getCreatorById(id))
+      creator_ids.map(async (id) => {
+        try {
+          return await creatorService.getCreatorById(id);
+        } catch (error) {
+          console.error(`Error fetching creator ${id}:`, error);
+          return null;
+        }
+      })
     );
 
-    // Filter out null results
+    // Filter out null results and track invalid UUIDs
     const validCreators = creators.filter((creator) => creator !== null);
-    const invalidIds = creator_ids.filter(
+    const invalidUUIDs = creator_ids.filter(
       (id, index) => creators[index] === null
     );
 
@@ -323,8 +363,8 @@ const bulkEmbedCreators = async (req, res) => {
       return res.sendJson({
         type: __constants.RESPONSE_MESSAGES.NO_RECORDS_FOUND,
         data: {
-          message: "No valid creators found for the provided IDs",
-          invalid_ids: invalidIds,
+          message: "No valid creators found for the provided UUIDs",
+          invalid_uuids: invalidUUIDs,
         },
       });
     }
@@ -343,7 +383,7 @@ const bulkEmbedCreators = async (req, res) => {
           valid_creators: validCreators.length,
           successful_embeddings: embeddingResults.successful,
           failed_embeddings: embeddingResults.failed,
-          invalid_creator_ids: invalidIds,
+          invalid_creator_uuids: invalidUUIDs,
           errors: embeddingResults.errors,
         },
       },
@@ -590,21 +630,25 @@ const testSimilarity = async (req, res) => {
 };
 
 // Route definitions
-router.post("/initialize", initializeValidation, initializeSearchSystem);
+router.post("/admin/initialize", initializeValidation, initializeSearchSystem);
 router.put(
-  "/embedding/:creatorId",
+  "/admin/embedding/:creatorId",
   updateEmbeddingValidation,
   updateCreatorEmbedding
 );
 router.delete(
-  "/embedding/:creatorId",
+  "/admin/embedding/:creatorId",
   deleteEmbeddingValidation,
   deleteCreatorEmbedding
 );
-router.get("/stats", getIndexStats);
-router.post("/bulk-embed", bulkEmbedValidation, bulkEmbedCreators);
-router.post("/rebuild-index", rebuildIndexValidation, rebuildIndex);
-router.get("/debug", debugPineconeData);
-router.get("/test-similarity/:query", testSimilarityValidation, testSimilarity);
+router.get("/admin/stats", getIndexStats);
+router.post("/admin/bulk-embed", bulkEmbedValidation, bulkEmbedCreators);
+router.post("/admin/rebuild-index", rebuildIndexValidation, rebuildIndex);
+router.get("/admin/debug", debugPineconeData);
+router.get(
+  "/admin/test-similarity/:query",
+  testSimilarityValidation,
+  testSimilarity
+);
 
 module.exports = router;

@@ -248,6 +248,17 @@ const similarValidation = (req, res, next) => {
 const findSimilarCreators = async (req, res) => {
   try {
     const { creatorId } = req.params;
+
+    // ✅ Validate UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(creatorId)) {
+      return res.sendJson({
+        type: __constants.RESPONSE_MESSAGES.INVALID_REQUEST,
+        err: "Invalid UUID format for creator ID",
+      });
+    }
+
     const {
       limit = "10",
       filters: filtersStr = "{}",
@@ -261,7 +272,7 @@ const findSimilarCreators = async (req, res) => {
       console.warn("Invalid filters JSON:", filtersStr);
     }
 
-    console.log(`👥 Finding creators similar to ID: ${creatorId}`);
+    console.log(`👥 Finding creators similar to UUID: ${creatorId}`);
 
     // Use the vector search service directly for similarity search
     const vectorSearchService = require("../../services/search/vectorSearchService");
@@ -285,7 +296,7 @@ const findSimilarCreators = async (req, res) => {
       type: __constants.RESPONSE_MESSAGES.SUCCESS,
       data: {
         results: enrichedResults,
-        reference_creator_id: creatorId,
+        reference_creator_uuid: creatorId,
         total_matches: results.total_matches,
         search_type: "similarity",
       },

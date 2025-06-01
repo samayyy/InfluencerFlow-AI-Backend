@@ -18,18 +18,19 @@ class CreatorService {
     try {
       await client.query("BEGIN");
 
-      // Insert main creator data
+      // Insert main creator data with AI enhancement support
       const creatorQuery = `
-        INSERT INTO creators (
-          creator_name, username, bio, email, business_email, profile_image_url,
-          verification_status, account_created_date, last_active_date, location_country,
-          location_city, location_timezone, languages, niche, content_categories,
-          tier, primary_platform, total_collaborations, avg_response_time_hours,
-          response_rate_percentage, avg_delivery_time_days, client_satisfaction_score
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
-        ) RETURNING id
-      `;
+      INSERT INTO creators (
+        creator_name, username, bio, email, business_email, profile_image_url,
+        verification_status, account_created_date, last_active_date, location_country,
+        location_city, location_timezone, languages, niche, content_categories,
+        tier, primary_platform, total_collaborations, avg_response_time_hours,
+        response_rate_percentage, avg_delivery_time_days, client_satisfaction_score,
+        content_examples, personality_profile, ai_enhanced
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+      ) RETURNING id
+    `;
 
       const creatorValues = [
         creatorData.creator_name,
@@ -44,9 +45,9 @@ class CreatorService {
         creatorData.location_country,
         creatorData.location_city,
         creatorData.location_timezone,
-        creatorData.languages,
+        JSON.stringify(creatorData.languages), // JSONB field
         creatorData.niche,
-        creatorData.content_categories,
+        JSON.stringify(creatorData.content_categories), // JSONB field
         creatorData.tier,
         creatorData.primary_platform,
         creatorData.total_collaborations,
@@ -54,25 +55,33 @@ class CreatorService {
         creatorData.response_rate_percentage,
         creatorData.avg_delivery_time_days,
         creatorData.client_satisfaction_score,
+        // ✅ AI-enhanced fields
+        creatorData.content_examples
+          ? JSON.stringify(creatorData.content_examples)
+          : null,
+        creatorData.personality_profile
+          ? JSON.stringify(creatorData.personality_profile)
+          : null,
+        creatorData.ai_enhanced || false,
       ];
 
       const creatorResult = await client.query(creatorQuery, creatorValues);
-      const creatorId = creatorResult.rows[0].id;
+      const creatorId = creatorResult.rows[0].id; // This is now a UUID
 
-      // Insert platform metrics
+      // Insert platform metrics (updated for UUID)
       if (creatorData.platform_metrics) {
         for (const platform in creatorData.platform_metrics) {
           const metrics = creatorData.platform_metrics[platform];
           const metricsQuery = `
-            INSERT INTO creator_platform_metrics (
-              creator_id, platform, follower_count, following_count, post_count,
-              avg_views, avg_likes, avg_comments, avg_shares, engagement_rate,
-              followers_gained_30d, total_videos, story_views_avg
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-          `;
+          INSERT INTO creator_platform_metrics (
+            creator_id, platform, follower_count, following_count, post_count,
+            avg_views, avg_likes, avg_comments, avg_shares, engagement_rate,
+            followers_gained_30d, total_videos, story_views_avg
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        `;
 
           await client.query(metricsQuery, [
-            creatorId,
+            creatorId, // UUID
             platform,
             metrics.follower_count,
             metrics.following_count,
@@ -89,19 +98,23 @@ class CreatorService {
         }
       }
 
-      // Insert audience demographics
+      // Insert audience demographics with enhanced fields
       if (creatorData.audience_demographics) {
         for (const platform in creatorData.audience_demographics) {
           const demo = creatorData.audience_demographics[platform];
           const demoQuery = `
-            INSERT INTO creator_audience_demographics (
-              creator_id, platform, age_13_17, age_18_24, age_25_34, age_35_44, age_45_plus,
-              gender_male, gender_female, gender_other, top_countries, interests
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-          `;
+          INSERT INTO creator_audience_demographics (
+            creator_id, platform, age_13_17, age_18_24, age_25_34, age_35_44, age_45_plus,
+            gender_male, gender_female, gender_other, top_countries, interests,
+            specific_interests, related_topics, peak_hours
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        `;
+
+          // Handle enhanced audience insights from AI
+          const audienceInsights = creatorData.audience_insights || {};
 
           await client.query(demoQuery, [
-            creatorId,
+            creatorId, // UUID
             platform,
             demo.age_13_17,
             demo.age_18_24,
@@ -111,26 +124,30 @@ class CreatorService {
             demo.gender_male,
             demo.gender_female,
             demo.gender_other,
-            demo.top_countries,
-            demo.interests,
+            JSON.stringify(demo.top_countries), // JSONB field
+            JSON.stringify(demo.interests), // JSONB field
+            // ✅ AI-enhanced fields
+            audienceInsights.specific_interests || null,
+            audienceInsights.related_topics || null,
+            audienceInsights.peak_hours || null,
           ]);
         }
       }
 
-      // Insert pricing data
+      // Insert pricing data (updated for UUID)
       if (creatorData.pricing) {
         for (const platform in creatorData.pricing) {
           const pricing = creatorData.pricing[platform];
           const pricingQuery = `
-            INSERT INTO creator_pricing (
-              creator_id, platform, sponsored_post_rate, story_mention_rate,
-              video_integration_rate, brand_ambassadorship_monthly_rate,
-              event_coverage_rate, currency
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          `;
+          INSERT INTO creator_pricing (
+            creator_id, platform, sponsored_post_rate, story_mention_rate,
+            video_integration_rate, brand_ambassadorship_monthly_rate,
+            event_coverage_rate, currency
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `;
 
           await client.query(pricingQuery, [
-            creatorId,
+            creatorId, // UUID
             platform,
             pricing.sponsored_post,
             pricing.story_mention,
@@ -142,10 +159,60 @@ class CreatorService {
         }
       }
 
+      // ✅ Insert AI-enhanced brand collaborations
+      if (
+        creatorData.brand_collaborations &&
+        Array.isArray(creatorData.brand_collaborations)
+      ) {
+        for (const collab of creatorData.brand_collaborations) {
+          const collabQuery = `
+          INSERT INTO creator_brand_collaborations (
+            creator_id, brand_name, collaboration_type, collaboration_date, 
+            success_rating, campaign_description, ai_generated
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `;
+
+          await client.query(collabQuery, [
+            creatorId, // UUID
+            collab.brand_name,
+            collab.collaboration_type,
+            collab.date, // Note: date field in AI data, collaboration_date in DB
+            collab.success_rating,
+            collab.campaign_description ||
+              `${collab.collaboration_type} campaign with ${collab.brand_name}`,
+            true, // ai_generated = true
+          ]);
+        }
+      }
+
+      // ✅ Insert AI-generated personality profile
+      if (creatorData.personality_profile) {
+        const personalityQuery = `
+        INSERT INTO creator_personality (
+          creator_id, content_style, communication_tone, posting_frequency,
+          collaboration_style, interaction_style, ai_generated
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `;
+
+        await client.query(personalityQuery, [
+          creatorId, // UUID
+          creatorData.personality_profile.content_style,
+          creatorData.personality_profile.communication_tone,
+          creatorData.personality_profile.posting_frequency,
+          creatorData.personality_profile.collaboration_style,
+          creatorData.personality_profile.interaction_style,
+          true, // ai_generated = true
+        ]);
+      }
+
       await client.query("COMMIT");
-      return creatorId;
+      console.log(
+        `✅ Created creator with ID: ${creatorId} (AI-enhanced: ${creatorData.ai_enhanced})`
+      );
+      return creatorId; // Returns UUID string
     } catch (error) {
       await client.query("ROLLBACK");
+      console.error("Error creating creator:", error);
       throw error;
     } finally {
       client.release();
@@ -245,59 +312,62 @@ class CreatorService {
 
   async getCreatorById(id) {
     const query = `
-      SELECT 
-        c.*,
-        jsonb_object_agg(
-          DISTINCT cpm.platform,
-          jsonb_build_object(
-            'follower_count', cpm.follower_count,
-            'following_count', cpm.following_count,
-            'post_count', cpm.post_count,
-            'avg_views', cpm.avg_views,
-            'avg_likes', cpm.avg_likes,
-            'avg_comments', cpm.avg_comments,
-            'avg_shares', cpm.avg_shares,
-            'engagement_rate', cpm.engagement_rate,
-            'followers_gained_30d', cpm.followers_gained_30d
-          )
-        ) FILTER (WHERE cpm.platform IS NOT NULL) as platform_metrics,
-        jsonb_object_agg(
-          DISTINCT cad.platform,
-          jsonb_build_object(
-            'age_groups', jsonb_build_object(
-              '13-17', cad.age_13_17,
-              '18-24', cad.age_18_24,
-              '25-34', cad.age_25_34,
-              '35-44', cad.age_35_44,
-              '45+', cad.age_45_plus
-            ),
-            'gender', jsonb_build_object(
-              'male', cad.gender_male,
-              'female', cad.gender_female,
-              'other', cad.gender_other
-            ),
-            'top_countries', cad.top_countries,
-            'interests', cad.interests
-          )
-        ) FILTER (WHERE cad.platform IS NOT NULL) as audience_demographics,
-        jsonb_object_agg(
-          DISTINCT cp.platform,
-          jsonb_build_object(
-            'sponsored_post', cp.sponsored_post_rate,
-            'story_mention', cp.story_mention_rate,
-            'video_integration', cp.video_integration_rate,
-            'brand_ambassadorship_monthly', cp.brand_ambassadorship_monthly_rate,
-            'event_coverage', cp.event_coverage_rate,
-            'currency', cp.currency
-          )
-        ) FILTER (WHERE cp.platform IS NOT NULL) as pricing
-      FROM creators c
-      LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
-      LEFT JOIN creator_audience_demographics cad ON c.id = cad.creator_id
-      LEFT JOIN creator_pricing cp ON c.id = cp.creator_id
-      WHERE c.id = $1
-      GROUP BY c.id
-    `;
+    SELECT 
+      c.*,
+      jsonb_object_agg(
+        DISTINCT cpm.platform,
+        jsonb_build_object(
+          'follower_count', cpm.follower_count,
+          'following_count', cpm.following_count,
+          'post_count', cpm.post_count,
+          'avg_views', cpm.avg_views,
+          'avg_likes', cpm.avg_likes,
+          'avg_comments', cpm.avg_comments,
+          'avg_shares', cpm.avg_shares,
+          'engagement_rate', cpm.engagement_rate,
+          'followers_gained_30d', cpm.followers_gained_30d
+        )
+      ) FILTER (WHERE cpm.platform IS NOT NULL) as platform_metrics,
+      jsonb_object_agg(
+        DISTINCT cad.platform,
+        jsonb_build_object(
+          'age_groups', jsonb_build_object(
+            '13-17', cad.age_13_17,
+            '18-24', cad.age_18_24,
+            '25-34', cad.age_25_34,
+            '35-44', cad.age_35_44,
+            '45+', cad.age_45_plus
+          ),
+          'gender', jsonb_build_object(
+            'male', cad.gender_male,
+            'female', cad.gender_female,
+            'other', cad.gender_other
+          ),
+          'top_countries', cad.top_countries,
+          'interests', cad.interests,
+          'specific_interests', cad.specific_interests,
+          'related_topics', cad.related_topics,
+          'peak_hours', cad.peak_hours
+        )
+      ) FILTER (WHERE cad.platform IS NOT NULL) as audience_demographics,
+      jsonb_object_agg(
+        DISTINCT cp.platform,
+        jsonb_build_object(
+          'sponsored_post', cp.sponsored_post_rate,
+          'story_mention', cp.story_mention_rate,
+          'video_integration', cp.video_integration_rate,
+          'brand_ambassadorship_monthly', cp.brand_ambassadorship_monthly_rate,
+          'event_coverage', cp.event_coverage_rate,
+          'currency', cp.currency
+        )
+      ) FILTER (WHERE cp.platform IS NOT NULL) as pricing
+    FROM creators c
+    LEFT JOIN creator_platform_metrics cpm ON c.id = cpm.creator_id
+    LEFT JOIN creator_audience_demographics cad ON c.id = cad.creator_id
+    LEFT JOIN creator_pricing cp ON c.id = cp.creator_id
+    WHERE c.id = $1::UUID
+    GROUP BY c.id
+  `;
 
     const result = await this.pool.query(query, [id]);
     return result.rows[0] || null;
