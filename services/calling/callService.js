@@ -16,10 +16,10 @@ class CallService {
     })
   }
 
-  // Initiate a new call to a creator
-  async initiateCall (callData) {
-    const client = await this.pool.connect()
-
+  // ✅ UPDATED: Use ElevenLabs outbound call API directly
+  async initiateCall(callData) {
+    const client = await this.pool.connect();
+    
     try {
       await client.query('BEGIN')
 
@@ -47,12 +47,48 @@ class CallService {
 
       const creator = creatorResult.rows[0]
 
-      // Create call record
+      // ✅ NEW: Use ElevenLabs outbound call API instead of manual Twilio integration
+      console.log(`🚀 Initiating ElevenLabs outbound call to ${creator.creator_name}`);
+
+      let elevenLabsResponse;
+      let callMethod = 'elevenlabs'; // Track which method was used
+
+      try {
+        // Try ElevenLabs outbound call first
+        elevenLabsResponse = await elevenLabsService.initiateOutboundCall({
+          agentId: agentId || process.env.ELEVENLABS_AGENT_ID,
+          phoneNumber: phoneNumber,
+          customInstructions: customMessage,
+          metadata: {
+            creator_id: creatorId,
+            creator_name: creator.creator_name,
+            initiated_by: initiatedByUserId
+          }
+        });
+
+        console.log(`✅ ElevenLabs outbound call initiated:`, elevenLabsResponse);
+
+      } catch (elevenLabsError) {
+        console.warn(`⚠️ ElevenLabs outbound call failed, falling back to Twilio: ${elevenLabsError.message}`);
+        
+        // Fallback to manual Twilio + ElevenLabs integration
+        callMethod = 'twilio_fallback';
+        
+        elevenLabsResponse = await twilioService.initiateCall(phoneNumber, {
+          creatorId,
+          agentId: agentId || process.env.ELEVENLABS_AGENT_ID,
+          customMessage,
+          timeout: 30,
+          recordCall: true
+        });
+      }
+
+      // Create call record in database
       const insertCallQuery = `
         INSERT INTO calls (
-          creator_id, phone_number, status, caller_id, 
-          notes, initiated_by_user_id
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+          creator_id, phone_number, status, call_sid, 
+          elevenlabs_conversation_id, call_method, notes, initiated_by_user_id
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING id, created_at
       `
 
@@ -60,8 +96,10 @@ class CallService {
         creatorId,
         phoneNumber,
         'initiated',
-        process.env.TWILIO_PHONE_NUMBER,
-        notes || `Outbound call to ${creator.creator_name}`,
+        elevenLabsResponse.callSid || elevenLabsResponse.callSid || null,
+        elevenLabsResponse.conversationId || null,
+        callMethod,
+        notes || `Outbound call to ${creator.creator_name} via ${callMethod}`,
         initiatedByUserId
       ])
 
@@ -71,38 +109,28 @@ class CallService {
       await this.logCallEvent(client, callId, 'initiated', {
         creator_name: creator.creator_name,
         phone_number: phoneNumber,
-        agent_id: agentId || 'default'
-      })
+        agent_id: agentId || process.env.ELEVENLABS_AGENT_ID,
+        call_method: callMethod,
+        elevenlabs_response: elevenLabsResponse
+      });
 
-      // Initiate Twilio call
-      const twilioResponse = await twilioService.initiateCall(phoneNumber, {
-        creatorId,
-        callId,
-        agentId: agentId || process.env.ELEVENLABS_AGENT_ID,
-        customMessage,
-        timeout: 30,
-        recordCall: true
-      })
+      await client.query("COMMIT");
 
-      // Update call with Twilio SID
-      await client.query(
-        'UPDATE calls SET call_sid = $1 WHERE id = $2',
-        [twilioResponse.callSid, callId]
-      )
-
-      await client.query('COMMIT')
-
-      console.log(`✅ Call initiated: ID ${callId}, SID ${twilioResponse.callSid}`)
+      console.log(`✅ Call record created: ID ${callId}, Method: ${callMethod}`);
 
       return {
         success: true,
         callId: callId,
-        callSid: twilioResponse.callSid,
+        callSid: elevenLabsResponse.callSid,
+        conversationId: elevenLabsResponse.conversationId,
         status: 'initiated',
-        message: `Call initiated to ${creator.creator_name}`,
+        callMethod: callMethod,
+        message: `Call initiated to ${creator.creator_name} via ${callMethod}`,
         creatorName: creator.creator_name,
-        phoneNumber: phoneNumber
-      }
+        phoneNumber: phoneNumber,
+        elevenLabsResponse: elevenLabsResponse
+      };
+
     } catch (error) {
       await client.query('ROLLBACK')
       console.error('Error initiating call:', error)
@@ -117,12 +145,12 @@ class CallService {
     const client = await this.pool.connect()
 
     try {
-      // Get call details from Twilio
-      let twilioCallDetails = null
+      // Get call details from Twilio if it's a Twilio call
+      let twilioCallDetails = null;
       try {
         twilioCallDetails = await twilioService.getCallDetails(callSid)
       } catch (error) {
-        console.warn('Could not fetch Twilio call details:', error.message)
+        console.warn('Could not fetch Twilio call details (might be ElevenLabs-only call):', error.message);
       }
 
       // Update call record
@@ -150,20 +178,25 @@ class CallService {
         paramIndex++
       }
 
+      if (additionalData.elevenlabsConversationId) {
+        updateFields.push(`elevenlabs_conversation_id = $${paramIndex}`);
+        values.push(additionalData.elevenlabsConversationId);
+        paramIndex++;
+      }
+
       const updateQuery = `
         UPDATE calls 
         SET ${updateFields.join(', ')}
-        WHERE call_sid = $1
-        RETURNING id, creator_id
-      `
-
-      const result = await client.query(updateQuery, values)
+        WHERE call_sid = $1 OR elevenlabs_conversation_id = $1
+        RETURNING id, creator_id, elevenlabs_conversation_id
+      `;
 
       if (result.rows.length === 0) {
-        throw new Error(`Call with SID ${callSid} not found`)
+        throw new Error(`Call with SID/Conversation ID ${callSid} not found`);
       }
 
-      const callId = result.rows[0].id
+      const callId = result.rows[0].id;
+      const conversationId = result.rows[0].elevenlabs_conversation_id;
 
       // Log status change event
       await this.logCallEvent(client, callId, status, {
@@ -172,9 +205,9 @@ class CallService {
       })
 
       // If call completed, get conversation insights
-      if (status === 'completed' && additionalData.elevenlabsConversationId) {
+      if (status === 'completed' && conversationId) {
         try {
-          await this.processCallCompletion(client, callId, additionalData.elevenlabsConversationId)
+          await this.processCallCompletion(client, callId, conversationId);
         } catch (error) {
           console.error('Error processing call completion:', error)
           // Don't fail the status update if insights fail
@@ -204,10 +237,10 @@ class CallService {
       // Update call with conversation summary
       await client.query(
         `UPDATE calls 
-         SET conversation_summary = $1, elevenlabs_conversation_id = $2 
-         WHERE id = $3`,
-        [analysis.summary, conversationId, callId]
-      )
+         SET conversation_summary = $1
+         WHERE id = $2`,
+        [analysis.summary, callId]
+      );
 
       // Insert analytics data
       const analyticsQuery = `
@@ -335,6 +368,12 @@ class CallService {
         values.push(filters.outcome)
       }
 
+      if (filters.callMethod) {
+        paramCount++;
+        whereClause += ` AND c.call_method = $${paramCount}`;
+        values.push(filters.callMethod);
+      }
+
       if (filters.startDate) {
         paramCount++
         whereClause += ` AND c.created_at >= $${paramCount}`
@@ -410,6 +449,12 @@ class CallService {
         values.push(filters.endDate)
       }
 
+      if (filters.callMethod) {
+        paramCount++;
+        whereClause += ` AND c.call_method = $${paramCount}`;
+        values.push(filters.callMethod);
+      }
+
       const analyticsQuery = `
         SELECT 
           COUNT(*) as total_calls,
@@ -419,6 +464,10 @@ class CallService {
           SUM(c.cost_usd) as total_cost,
           AVG(ca.sentiment_score) as avg_sentiment,
           COUNT(CASE WHEN ca.follow_up_required = true THEN 1 END) as follow_ups_needed,
+          
+          -- Method breakdown
+          COUNT(CASE WHEN c.call_method = 'elevenlabs' THEN 1 END) as elevenlabs_calls,
+          COUNT(CASE WHEN c.call_method = 'twilio_fallback' THEN 1 END) as twilio_fallback_calls,
           
           -- Outcome breakdown
           COUNT(CASE WHEN c.call_outcome = 'completed' THEN 1 END) as outcome_completed,
@@ -442,9 +491,11 @@ class CallService {
       const stats = result.rows[0]
 
       // Calculate derived metrics
-      const totalCalls = parseInt(stats.total_calls) || 0
-      const completedCalls = parseInt(stats.completed_calls) || 0
-      const successfulCalls = parseInt(stats.successful_calls) || 0
+      const totalCalls = parseInt(stats.total_calls) || 0;
+      const completedCalls = parseInt(stats.completed_calls) || 0;
+      const successfulCalls = parseInt(stats.successful_calls) || 0;
+      const elevenLabsCalls = parseInt(stats.elevenlabs_calls) || 0;
+      const twilioFallbackCalls = parseInt(stats.twilio_fallback_calls) || 0;
 
       return {
         overview: {
@@ -457,6 +508,11 @@ class CallService {
           total_cost_usd: parseFloat(stats.total_cost || 0).toFixed(2),
           avg_sentiment: parseFloat(stats.avg_sentiment || 0).toFixed(2),
           follow_ups_needed: parseInt(stats.follow_ups_needed) || 0
+        },
+        call_methods: {
+          elevenlabs_direct: elevenLabsCalls,
+          twilio_fallback: twilioFallbackCalls,
+          elevenlabs_success_rate: totalCalls > 0 ? ((elevenLabsCalls / totalCalls) * 100).toFixed(2) + '%' : '0%'
         },
         outcomes: {
           completed: parseInt(stats.outcome_completed) || 0,
@@ -488,10 +544,6 @@ class CallService {
         throw new Error(`Call with ID ${callId} not found`)
       }
 
-      if (!call.call_sid) {
-        throw new Error('Call SID not found - cannot terminate')
-      }
-
       if (['completed', 'failed', 'canceled'].includes(call.status)) {
         return {
           success: true,
@@ -500,21 +552,42 @@ class CallService {
         }
       }
 
-      // Terminate call via Twilio
-      const result = await twilioService.hangupCall(call.call_sid)
+      let terminationResult = { success: false };
 
-      // Update call status
-      await this.updateCallStatus(call.call_sid, 'canceled', {
+      // Try to terminate via appropriate method
+      if (call.call_method === 'elevenlabs' && call.elevenlabs_conversation_id) {
+        try {
+          // End ElevenLabs conversation
+          terminationResult = await elevenLabsService.endConversation(call.elevenlabs_conversation_id);
+        } catch (error) {
+          console.warn('Failed to end ElevenLabs conversation, trying Twilio:', error.message);
+        }
+      }
+
+      // If ElevenLabs termination failed or it's a Twilio call, try Twilio
+      if (!terminationResult.success && call.call_sid) {
+        try {
+          terminationResult = await twilioService.hangupCall(call.call_sid);
+        } catch (error) {
+          console.error('Failed to terminate via Twilio:', error.message);
+        }
+      }
+
+      // Update call status regardless of termination method success
+      await this.updateCallStatus(call.call_sid || call.elevenlabs_conversation_id, 'canceled', {
         outcome: 'canceled',
         terminated_manually: true
       })
 
       return {
         success: true,
-        message: 'Call terminated successfully',
+        message: 'Call termination attempted',
         callId: callId,
-        callSid: call.call_sid
-      }
+        callSid: call.call_sid,
+        conversationId: call.elevenlabs_conversation_id,
+        terminationMethod: call.call_method
+      };
+
     } catch (error) {
       console.error('Error terminating call:', error)
       throw error
@@ -524,19 +597,49 @@ class CallService {
   // Get call recordings
   async getCallRecordings (callId) {
     try {
-      const call = await this.getCallById(callId)
-
-      if (!call || !call.call_sid) {
-        throw new Error('Call not found or no call SID available')
+      const call = await this.getCallById(callId);
+      
+      if (!call) {
+        throw new Error('Call not found');
       }
 
-      const recordings = await twilioService.getCallRecordings(call.call_sid)
+      let recordings = [];
+
+      // For Twilio calls, get Twilio recordings
+      if (call.call_sid) {
+        try {
+          recordings = await twilioService.getCallRecordings(call.call_sid);
+        } catch (error) {
+          console.warn('Failed to get Twilio recordings:', error.message);
+        }
+      }
+
+      // For ElevenLabs calls, get conversation history as "recording"
+      if (call.elevenlabs_conversation_id) {
+        try {
+          const conversationHistory = await elevenLabsService.getConversationHistory(call.elevenlabs_conversation_id);
+          if (conversationHistory && conversationHistory.messages) {
+            recordings.push({
+              type: 'conversation_transcript',
+              conversation_id: call.elevenlabs_conversation_id,
+              messages: conversationHistory.messages,
+              duration: conversationHistory.duration || 0,
+              status: 'completed'
+            });
+          }
+        } catch (error) {
+          console.warn('Failed to get ElevenLabs conversation history:', error.message);
+        }
+      }
 
       return {
         callId: callId,
         callSid: call.call_sid,
-        recordings: recordings
-      }
+        conversationId: call.elevenlabs_conversation_id,
+        recordings: recordings,
+        callMethod: call.call_method
+      };
+
     } catch (error) {
       console.error('Error fetching call recordings:', error)
       throw error
@@ -554,8 +657,13 @@ class CallService {
       // Check database connectivity
       await this.pool.query('SELECT 1')
 
+      const systemStatus = 
+        twilioHealth.status === 'healthy' && elevenLabsHealth.status === 'healthy' 
+          ? 'healthy' 
+          : 'degraded';
+
       return {
-        status: 'healthy',
+        status: systemStatus,
         components: {
           twilio: twilioHealth,
           elevenlabs: elevenLabsHealth,
@@ -563,6 +671,11 @@ class CallService {
             status: 'healthy',
             service: 'postgresql'
           }
+        },
+        call_methods: {
+          primary: 'elevenlabs_outbound',
+          fallback: 'twilio_manual',
+          elevenlabs_agent_configured: elevenLabsHealth.agentPhoneNumberId === 'configured'
         },
         timestamp: new Date().toISOString()
       }

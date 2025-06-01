@@ -15,14 +15,14 @@ const elevenLabsService = require('../../services/calling/elevenLabsService')
  * @memberof -CALLING-WEBHOOKS-module-
  * @name voiceWebhook
  * @path {POST} /api/calling/voice
- * @description Handle incoming voice calls and connect to ElevenLabs
+ * @description Handle incoming voice calls and connect to ElevenLabs (fallback mode)
  */
 const voiceWebhook = async (req, res) => {
   try {
     const { CallSid, From, To, CallStatus } = req.body
     const { callId, creatorId, agentId, customMessage } = req.query
 
-    console.log('🎙️ Voice webhook received:', {
+    console.log(`🎙️ Voice webhook received (Twilio fallback mode):`, {
       CallSid,
       From,
       To,
@@ -43,61 +43,59 @@ const voiceWebhook = async (req, res) => {
       }
     }
 
-    // Create or get conversation from ElevenLabs
-    let conversationData = null
-    let elevenlabsSuccess = false
+    // ✅ UPDATED: This webhook is now primarily for Twilio fallback calls
+    // ElevenLabs outbound calls are handled directly via their API
+    
+    let twimlOptions = {
+      agentId: agentId,
+      creatorId: creatorId,
+      customMessage: customMessage || "Hello! Thank you for your interest. We're connecting you with our AI assistant to discuss potential collaboration opportunities.",
+      connectToAgent: false, // Default to false for fallback mode
+      fallbackMode: true
+    };
 
+    // For fallback Twilio calls, try to create ElevenLabs conversation if possible
+    let conversationData = null;
+    let elevenlabsSuccess = false;
+    
     if (agentId && creatorId) {
       try {
+        // Try the deprecated createConversation method for webhook compatibility
         conversationData = await elevenLabsService.createConversation({
           agentId: agentId,
           creatorId: creatorId,
           phoneNumber: From,
-          callContext: 'outbound_sales',
+          callContext: 'outbound_sales_fallback',
           metadata: {
             call_sid: CallSid,
-            call_id: callId
+            call_id: callId,
+            webhook_mode: true
           }
         })
 
         elevenlabsSuccess = conversationData && conversationData.status !== 'fallback_created'
 
+        // Check if we got a real conversation (not mock)
+        elevenlabsSuccess = conversationData && 
+                           conversationData.status !== 'mock_created' && 
+                           conversationData.status !== 'fallback_created';
+        
         if (elevenlabsSuccess) {
-          console.log(`✅ ElevenLabs conversation created: ${conversationData.conversationId}`)
+          console.log(`✅ ElevenLabs fallback conversation created: ${conversationData.conversationId}`);
+          twimlOptions.connectToAgent = true;
+          twimlOptions.conversationId = conversationData.conversationId;
+          twimlOptions.fallbackMode = false;
         } else {
-          console.log(`⚠️ ElevenLabs fallback mode: ${conversationData?.note || 'Unknown issue'}`)
+          console.log(`⚠️ ElevenLabs not available, using basic TwiML: ${conversationData?.note || 'Unknown issue'}`);
         }
       } catch (error) {
-        console.error('Failed to create ElevenLabs conversation:', error)
-        // Continue without ElevenLabs - use basic TwiML response
-        elevenlabsSuccess = false
+        console.error('Failed to create ElevenLabs conversation in webhook:', error);
+        elevenlabsSuccess = false;
       }
     }
 
     // Generate TwiML response
-    let twimlOptions
-
-    if (elevenlabsSuccess && conversationData) {
-      // Full ElevenLabs integration
-      twimlOptions = {
-        agentId: agentId,
-        creatorId: creatorId,
-        customMessage: customMessage,
-        connectToAgent: true,
-        conversationId: conversationData.conversationId
-      }
-    } else {
-      // Fallback to basic message (for development/testing)
-      twimlOptions = {
-        agentId: agentId,
-        creatorId: creatorId,
-        customMessage: customMessage || 'Hello! Thank you for testing our calling system. This is a development test call. We will be in touch soon with more information about collaboration opportunities.',
-        connectToAgent: false,
-        fallbackMode: true
-      }
-    }
-
-    const twimlResponse = twilioService.generateVoiceTwiML(twimlOptions)
+    const twimlResponse = twilioService.generateVoiceTwiML(twimlOptions);
 
     // Update call status if we have call ID
     if (callId && CallSid) {
@@ -105,10 +103,12 @@ const voiceWebhook = async (req, res) => {
         await callService.updateCallStatus(CallSid, 'in-progress', {
           elevenlabsConversationId: conversationData?.conversationId,
           from: From,
-          to: To
-        })
+          to: To,
+          webhook_processed: true,
+          elevenlabs_success: elevenlabsSuccess
+        });
       } catch (error) {
-        console.error('Failed to update call status:', error)
+        console.error('Failed to update call status in webhook:', error);
         // Don't fail the webhook
       }
     }
@@ -206,8 +206,9 @@ const statusWebhook = async (req, res) => {
         call_duration: CallDuration,
         direction: Direction,
         timestamp: Timestamp,
-        twilio_status: CallStatus
-      })
+        twilio_status: CallStatus,
+        webhook_source: 'twilio_status'
+      });
 
       console.log(`✅ Call status updated: ${CallSid} -> ${internalStatus}`)
     } catch (error) {
@@ -220,8 +221,8 @@ const statusWebhook = async (req, res) => {
       // Run asynchronously to not delay webhook response
       setImmediate(async () => {
         try {
-          // This will be handled in the callService.updateCallStatus if conversation ID is available
-          console.log(`🔍 Processing completed call insights for ${CallSid}`)
+          console.log(`🔍 Processing completed call insights for ${CallSid}`);
+          // Call completion processing is handled in callService.updateCallStatus
         } catch (error) {
           console.error('Error processing call completion insights:', error)
         }
@@ -309,9 +310,100 @@ const recordingWebhook = async (req, res) => {
 
 /**
  * @memberof -CALLING-WEBHOOKS-module-
+ * @name elevenLabsWebhook
+ * @path {POST} /api/calling/elevenlabs-webhook
+ * @description Handle ElevenLabs conversation events (NEW)
+ */
+const elevenLabsWebhook = async (req, res) => {
+  try {
+    const { event, conversation_id, call_sid, data } = req.body;
+
+    console.log(`🎤 ElevenLabs webhook received:`, {
+      event,
+      conversation_id,
+      call_sid,
+      timestamp: new Date().toISOString()
+    });
+
+    // Handle different ElevenLabs events
+    switch (event) {
+      case 'conversation.started':
+        console.log(`▶️ ElevenLabs conversation started: ${conversation_id}`);
+        if (call_sid) {
+          await callService.updateCallStatus(call_sid, 'in-progress', {
+            elevenlabsConversationId: conversation_id,
+            event_source: 'elevenlabs_webhook'
+          });
+        }
+        break;
+
+      case 'conversation.ended':
+        console.log(`⏹️ ElevenLabs conversation ended: ${conversation_id}`);
+        if (call_sid) {
+          await callService.updateCallStatus(call_sid, 'completed', {
+            outcome: 'completed',
+            event_source: 'elevenlabs_webhook',
+            end_reason: data?.end_reason
+          });
+        }
+        break;
+
+      case 'call.status_changed':
+        console.log(`📞 ElevenLabs call status changed: ${data?.status}`);
+        if (call_sid && data?.status) {
+          let mappedStatus = data.status;
+          let outcome = null;
+
+          // Map ElevenLabs statuses to our internal statuses
+          switch (data.status) {
+            case 'ringing':
+              mappedStatus = 'ringing';
+              break;
+            case 'answered':
+              mappedStatus = 'in-progress';
+              break;
+            case 'completed':
+              mappedStatus = 'completed';
+              outcome = 'completed';
+              break;
+            case 'failed':
+            case 'busy':
+            case 'no-answer':
+              mappedStatus = 'failed';
+              outcome = data.status;
+              break;
+          }
+
+          await callService.updateCallStatus(call_sid, mappedStatus, {
+            outcome: outcome,
+            event_source: 'elevenlabs_webhook',
+            elevenlabs_status: data.status
+          });
+        }
+        break;
+
+      case 'conversation.message':
+        // Log conversation messages for analytics
+        console.log(`💬 ElevenLabs message: ${conversation_id}`);
+        break;
+
+      default:
+        console.log(`❓ Unknown ElevenLabs event: ${event}`);
+    }
+
+    res.status(200).json({ success: true, event_processed: event });
+
+  } catch (error) {
+    console.error('Error in ElevenLabs webhook:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * @memberof -CALLING-WEBHOOKS-module-
  * @name streamWebhook
  * @path {POST} /api/calling/stream
- * @description Handle ElevenLabs stream events
+ * @description Handle ElevenLabs stream events (for manual Twilio integration)
  */
 const streamWebhook = async (req, res) => {
   try {
@@ -393,17 +485,27 @@ const testWebhook = async (req, res) => {
 const healthCheck = async (req, res) => {
   try {
     // Check if webhook URL is accessible
-    const webhookUrl = `${req.protocol}://${req.get('host')}/api/calling/test-webhook`
-
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
     res.json({
       success: true,
       status: 'healthy',
       webhooks: {
-        voice: `${req.protocol}://${req.get('host')}/api/calling/voice`,
-        status: `${req.protocol}://${req.get('host')}/api/calling/status`,
-        recording: `${req.protocol}://${req.get('host')}/api/calling/recording`,
-        stream: `${req.protocol}://${req.get('host')}/api/calling/stream`,
-        test: webhookUrl
+        // Twilio webhooks (for fallback calls)
+        twilio_voice: `${baseUrl}/api/calling/voice`,
+        twilio_status: `${baseUrl}/api/calling/status`,
+        twilio_recording: `${baseUrl}/api/calling/recording`,
+        twilio_stream: `${baseUrl}/api/calling/stream`,
+        
+        // ElevenLabs webhooks (for direct calls)
+        elevenlabs_events: `${baseUrl}/api/calling/elevenlabs-webhook`,
+        
+        // Testing
+        test: `${baseUrl}/api/calling/test-webhook`
+      },
+      integration_methods: {
+        primary: 'elevenlabs_outbound_api',
+        fallback: 'twilio_manual_integration'
       },
       environment: process.env.NODE_ENV || 'development',
       timestamp: new Date().toISOString()
@@ -418,11 +520,12 @@ const healthCheck = async (req, res) => {
 }
 
 // Route definitions
-router.post('/voice', voiceWebhook)
-router.post('/status', statusWebhook)
-router.post('/recording', recordingWebhook)
-router.post('/stream', streamWebhook)
-router.post('/test-webhook', testWebhook)
-router.get('/webhook-health', healthCheck)
+router.post("/voice", voiceWebhook); // Twilio voice webhook (fallback)
+router.post("/status", statusWebhook); // Twilio status webhook
+router.post("/recording", recordingWebhook); // Twilio recording webhook
+router.post("/stream", streamWebhook); // Twilio stream webhook (fallback)
+router.post("/elevenlabs-webhook", elevenLabsWebhook); // ✅ NEW: ElevenLabs events
+router.post("/test-webhook", testWebhook); // Testing
+router.get("/webhook-health", healthCheck); // Health check
 
 module.exports = router

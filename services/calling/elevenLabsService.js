@@ -3,11 +3,12 @@ const axios = require('axios')
 const __config = require('../../config')
 
 class ElevenLabsService {
-  constructor () {
-    this.apiKey = process.env.ELEVENLABS_API_KEY
-    this.baseUrl = 'https://api.elevenlabs.io/v1'
-    this.defaultAgentId = process.env.ELEVENLABS_AGENT_ID
-
+  constructor() {
+    this.apiKey = process.env.ELEVENLABS_API_KEY;
+    this.baseUrl = 'https://api.elevenlabs.io/v1';
+    this.defaultAgentId = process.env.ELEVENLABS_AGENT_ID;
+    this.agentPhoneNumberId = process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID; // New requirement
+    
     this.client = axios.create({
       baseURL: this.baseUrl,
       headers: {
@@ -46,124 +47,108 @@ class ElevenLabsService {
     }
   }
 
-  // Create a new conversation session
-  async createConversation (options = {}) {
+  // ✅ FIXED: Use the correct ElevenLabs Twilio outbound call API
+  async initiateOutboundCall(options = {}) {
     try {
       const {
         agentId = this.defaultAgentId,
-        creatorId,
         phoneNumber,
-        callContext = 'outbound_sales',
+        agentPhoneNumberId = this.agentPhoneNumberId,
         customInstructions,
-        metadata = {}
-      } = options
+        metadata = {},
+        creator_pricing
+      } = options;
 
       if (!agentId) {
-        throw new Error('Agent ID is required to create conversation')
+        throw new Error('Agent ID is required for outbound call');
       }
 
-      // First, verify the agent exists
-      console.log(`🔍 Verifying agent: ${agentId}`)
-      try {
-        await this.getAgent(agentId)
-        console.log(`✅ Agent verified: ${agentId}`)
-      } catch (error) {
-        console.error(`❌ Agent verification failed: ${error.message}`)
-        throw new Error(`Invalid agent ID: ${agentId}`)
+      if (!phoneNumber) {
+        throw new Error('Phone number is required for outbound call');
       }
 
-      // Try different conversation creation approaches
-      let conversationResponse = null
-      let conversationId = null
-
-      // Method 1: Try the standard conversation endpoint
-      try {
-        console.log(`🚀 Attempting conversation creation with agent: ${agentId}`)
-
-        const conversationData = {
-          agent_id: agentId,
-          // Add context variables that might be useful for the agent
-          variables: {
-            creator_id: creatorId || 'unknown',
-            phone_number: phoneNumber || 'unknown',
-            call_context: callContext,
-            timestamp: new Date().toISOString(),
-            ...metadata
-          }
-        }
-
-        // Add custom instructions if provided
-        if (customInstructions) {
-          conversationData.agent_override = {
-            prompt: customInstructions
-          }
-        }
-
-        console.log('📤 Sending conversation request:', JSON.stringify(conversationData, null, 2))
-
-        conversationResponse = await this.client.post('/convai/conversations', conversationData)
-        conversationId = conversationResponse.data.conversation_id
-
-        console.log(`✅ Method 1 success - Conversation created: ${conversationId}`)
-      } catch (error) {
-        console.log(`⚠️ Method 1 failed: ${error.response?.status} ${error.response?.statusText}`)
-        console.log('   Error details:', error.response?.data)
-
-        // Method 2: Try alternative endpoint or simpler payload
-        try {
-          console.log('🔄 Trying alternative method...')
-
-          const simpleData = {
-            agent_id: agentId
-          }
-
-          conversationResponse = await this.client.post('/convai/conversations', simpleData)
-          conversationId = conversationResponse.data.conversation_id
-
-          console.log(`✅ Method 2 success - Conversation created: ${conversationId}`)
-        } catch (error2) {
-          console.log(`⚠️ Method 2 also failed: ${error2.response?.status} ${error2.response?.statusText}`)
-
-          // Method 3: Return a mock conversation for development
-          console.log('🔄 Using mock conversation for development...')
-
-          conversationId = `mock_conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-
-          console.log(`🎭 Mock conversation created: ${conversationId}`)
-
-          return {
-            conversationId: conversationId,
-            agentId: agentId,
-            status: 'created_mock',
-            websocketUrl: null,
-            note: 'Using mock conversation - check ElevenLabs API setup'
-          }
-        }
+      if (!agentPhoneNumberId) {
+        throw new Error('Agent phone number ID is required. Set ELEVENLABS_AGENT_PHONE_NUMBER_ID in environment variables');
       }
+
+      console.log(`🚀 Initiating ElevenLabs outbound call to: ${phoneNumber} with name ${metadata.creator_name}`);
+
+      // ✅ Use the correct ElevenLabs Twilio outbound call endpoint
+      const callData = {
+        agent_id: agentId,
+        agent_phone_number_id: agentPhoneNumberId,
+        to_number: phoneNumber,
+        conversation_initiation_client_data: {
+            conversation_config_override: {
+                agent: {
+                    prompt: {
+                        prompt: 'You are Lynda, a street-smart, charismatic creator outreach specialist for a top influencer marketing agency that works with leading D2C, tech, and lifestyle brands. You specialize in onboarding Instagram and YouTube creators for paid brand collaborations, handling everything from evaluating fit to negotiating rates and locking in deals smoothly. You speak like a real person—casual, sharp, and confident—with zero pitch-talk or robotic scripts. You build trust fast by relating to creators’ content grind and asking chill, qualifying questions like “You open to collabs these days?” or “What’s your usual ballpark for something like this?” You negotiate in a relaxed, real-talk style, always keeping things respectful but honest: “Totally hear you—thing is, the brand’s budget for this tier is more like X, but I’m tryna make it work.” Your goal is to close creators on deals within a $500–$1000 range (never stated out loud), get them hyped on the opportunity, and send over contracts and briefs via email. If a creator’s not feeling it, you never push—just keep it light: “All good—maybe we circle back next time, yeah?” If they ask who you are, say: “I’m Lynda, I connect creators like you with paid brand deals. You focus on content, I handle the rest.” You never overpromise, never overexplain, and never repeat yourself—just smooth, real negotiation that respects both the brand’s goals and the creator’s value.'
+                    },
+                    first_message: `Hi ${metadata.creator_name}! I'm the AI agent from InfluencerFlow. I've been following your content and I'm really impressed with your engagement rate. I have an exciting campaign opportunity that I think would be perfect for your audience. Do you have a few minutes to chat?`
+                }
+            }
+        }
+      };
+
+      // Add custom instructions if provided
+      if (customInstructions) {
+        callData.agent_override = {
+          prompt: customInstructions
+        };
+      }
+
+      console.log('📤 Sending outbound call request:', JSON.stringify(callData, null, 2));
+
+      const response = await this.client.post('/convai/twilio/outbound-call', callData);
+      
+      console.log(`✅ ElevenLabs outbound call initiated successfully`);
+      console.log('Response:', response.data);
 
       return {
-        conversationId: conversationId,
+        success: response.data.success || true,
+        message: response.data.message || 'Call initiated',
+        conversationId: response.data.conversation_id,
+        callSid: response.data.callSid,
         agentId: agentId,
-        status: 'created',
-        websocketUrl: conversationResponse?.data?.websocket_url || null
-      }
+        phoneNumber: phoneNumber,
+        status: 'initiated'
+      };
+
     } catch (error) {
-      console.error('❌ All conversation creation methods failed:', error.message)
+      console.error('❌ ElevenLabs outbound call failed:', error.response?.data || error.message);
+      
+      // Provide detailed error information
+      const errorDetails = {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      };
 
-      // Return a development-friendly response instead of throwing
-      const mockConversationId = `fallback_conv_${Date.now()}`
-
-      console.log(`🆘 Creating fallback conversation: ${mockConversationId}`)
-
-      return {
-        conversationId: mockConversationId,
-        agentId: agentId || 'unknown',
-        status: 'fallback_created',
-        websocketUrl: null,
-        error: error.message,
-        note: 'Check ElevenLabs API key and agent configuration'
-      }
+      throw new Error(`ElevenLabs outbound call failed: ${JSON.stringify(errorDetails)}`);
     }
+  }
+
+  // ✅ DEPRECATED: Old conversation creation method (keeping for backward compatibility)
+  async createConversation(options = {}) {
+    console.log('⚠️ createConversation is deprecated. Use initiateOutboundCall for Twilio integration.');
+    
+    // For Twilio calls, redirect to the new method
+    if (options.phoneNumber) {
+      return await this.initiateOutboundCall(options);
+    }
+
+    // For non-Twilio conversations, return a mock for now
+    const mockConversationId = `mock_conv_${Date.now()}`;
+    console.log(`🎭 Creating mock conversation: ${mockConversationId}`);
+    
+    return {
+      conversationId: mockConversationId,
+      agentId: options.agentId || this.defaultAgentId,
+      status: 'mock_created',
+      websocketUrl: null,
+      note: 'Mock conversation created. Use initiateOutboundCall for real Twilio calls.'
+    };
   }
 
   // Get conversation details
@@ -429,13 +414,15 @@ class ElevenLabsService {
   // Health check
   async healthCheck () {
     try {
-      const agents = await this.getAgents()
-
+      // Test with a simple agent fetch
+      const agents = await this.getAgents();
+      
       return {
         status: 'healthy',
         service: 'elevenlabs',
         agentsAvailable: agents?.length || 0,
         defaultAgent: this.defaultAgentId,
+        agentPhoneNumberId: this.agentPhoneNumberId ? 'configured' : 'missing',
         timestamp: new Date().toISOString()
       }
     } catch (error) {
