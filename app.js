@@ -11,7 +11,6 @@ const helmet = require('helmet')
 const authMiddleware = require('./middlewares/auth/authentication')
 const numCPUs = __config.clusterNumber || 0
 const fs = require('fs')
-const pollContractStatus = require('./polling')
 class httpApiWorker {
   constructor () {
     this.app = {}
@@ -91,7 +90,6 @@ class httpApiWorker {
     authMiddleware.initialize(vm.app)
     require('./routes')(vm.app)
 
-    vm.app.use('/api/docusign', require('./controllers/docusign/webhook'))
     vm.app.use((req, res, next) => {
       const err = new Error('Not Found')
       res.sendJson({
@@ -113,8 +111,6 @@ class httpApiWorker {
     }
     const apiPrefix = __config.addBaseUrlPrefix === true ? '/' + __config.api_prefix : ''
     console.log('Application listening on Port :', __config.port, '\nApplication Test URL : ', __config.base_url + apiPrefix + '/api/healthCheck/getping')
-    await pollContractStatus()
-    setInterval(pollContractStatus, 10 * 1000)
     const stopGraceFully = () => {
       vm.app.server.close(async (error) => {
         console.log('inside ~function=runExpressServerserver is closed', error)

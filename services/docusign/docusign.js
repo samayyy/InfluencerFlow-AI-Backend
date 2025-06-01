@@ -8,7 +8,6 @@ const db = require("../../queries/mails/mails_queries");
 
 class ContractService {
   constructor() {
-    console.log("[ContractService] Initializing...");
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     this.docusignClient = new docusign.ApiClient();
     this.docusignClient.setOAuthBasePath("account-d.docusign.com");
