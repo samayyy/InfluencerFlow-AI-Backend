@@ -5,6 +5,8 @@ const __constants = require('../../config/constants')
 const twilioService = require('../../services/calling/twilioService')
 const callService = require('../../services/calling/callService')
 const elevenLabsService = require('../../services/calling/elevenLabsService')
+const crypto = require('crypto'); // ✅ REQUIRED
+
 
 /**
  * @namespace -CALLING-WEBHOOKS-MODULE-
@@ -444,6 +446,71 @@ const streamWebhook = async (req, res) => {
   }
 }
 
+// /**
+//  * @memberof -CALLING-WEBHOOKS-module-
+//  * @name postCallData
+//  * @path {POST} /api/calling/postCallData
+//  * @description Post Call Data
+//  */
+// const postCallData = async (req, res) => {
+//   try {
+//     console.log('🧪 Post Call Data called:')
+//     console.log('Headers:', req.headers)
+//     console.log('Body:', req.body)
+//     console.log('Query:', req.query)
+//     const webhookSecret = process.env.ELEVENLABS_POST_CALL_WEBHOOK_SECRET
+//     const signatureHeader = req.headers['elevenlabs-signature'];
+//     if (!signatureHeader) return res.status(400).send('Missing signature');
+
+//     if (!req.rawBody) {
+//         console.error('❌ rawBody is undefined');
+//         return res.status(400).send('Missing raw body for HMAC validation');
+//     }
+
+//     console.log('🔍 Raw body string:', req.rawBody.toString());
+
+//     const receivedSignature = signatureHeader.split('v0=')[1];
+
+//     const expectedSignature = crypto
+//         .createHmac('sha256', webhookSecret)
+//         .update(req.rawBody) // <--- must be Buffer or string
+//         .digest('hex');
+
+//     console.log('🧾 Received Signature:', receivedSignature);
+//     console.log('🧾 Expected Signature:', expectedSignature);
+        
+
+//     const isValid = crypto.timingSafeEqual(
+//         Buffer.from(receivedSignature),
+//         Buffer.from(expectedSignature)
+//     );
+
+//     if (!isValid) {
+//         console.error('❌ Invalid signature');
+//         return res.status(401).send('Invalid signature');
+//     }
+
+//     console.log('✅ Verified webhook:', req.body);
+
+//     res.json({
+//       success: true,
+//       message: 'Post Call Data webhook received successfully',
+//       timestamp: new Date().toISOString(),
+//       data: {
+//         headers: req.headers,
+//         body: req.body,
+//         query: req.query
+//       }
+//     })
+//   } catch (error) {
+//     console.error('Error in test webhook:', error)
+//     res.status(500).json({
+//       success: false,
+//       error: error.message
+//     })
+//   }
+// }
+
 /**
  * @memberof -CALLING-WEBHOOKS-module-
  * @name testWebhook
@@ -527,5 +594,6 @@ router.post("/stream", streamWebhook); // Twilio stream webhook (fallback)
 router.post("/elevenlabs-webhook", elevenLabsWebhook); // ✅ NEW: ElevenLabs events
 router.post("/test-webhook", testWebhook); // Testing
 router.get("/webhook-health", healthCheck); // Health check
+// router.post("/postCallData", postCallData) // Post Call Data
 
 module.exports = router

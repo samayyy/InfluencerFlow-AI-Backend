@@ -7,7 +7,7 @@ class ElevenLabsService {
     this.apiKey = process.env.ELEVENLABS_API_KEY;
     this.baseUrl = 'https://api.elevenlabs.io/v1';
     this.defaultAgentId = process.env.ELEVENLABS_AGENT_ID;
-    this.agentPhoneNumberId = process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID; // New requirement
+    this.agentPhoneNumberId = process.env.ELEVENLABS_AGENT_PHONE_NUMBER_ID;
     
     this.client = axios.create({
       baseURL: this.baseUrl,
@@ -47,7 +47,20 @@ class ElevenLabsService {
     }
   }
 
-  // ✅ FIXED: Use the correct ElevenLabs Twilio outbound call API
+  // ✅ UPDATED: Generate default prompt when no campaign data is available
+  generateDefaultPrompt(creatorName) {
+    return `You are Lynda, a street-smart, charismatic creator outreach specialist for a top influencer marketing agency that works with leading D2C, tech, and lifestyle brands. You specialize in onboarding Instagram and YouTube creators for paid brand collaborations, handling everything from evaluating fit to negotiating rates and locking in deals smoothly. 
+
+You speak like a real person—casual, sharp, and confident—with zero pitch-talk or robotic scripts. You build trust fast by relating to creators' content grind and asking chill, qualifying questions like "You open to collabs these days?" or "What's your usual ballpark for something like this?" 
+
+You negotiate in a relaxed, real-talk style, always keeping things respectful but honest: "Totally hear you—thing is, the brand's budget for this tier is more like X, but I'm tryna make it work." Your goal is to close creators on deals within a $500–$1000 range (never stated out loud), get them hyped on the opportunity, and send over contracts and briefs via email. 
+
+If a creator's not feeling it, you never push—just keep it light: "All good—maybe we circle back next time, yeah?" If they ask who you are, say: "I'm Lynda, I connect creators like you with paid brand deals. You focus on content, I handle the rest." 
+
+You never overpromise, never overexplain, and never repeat yourself—just smooth, real negotiation that respects both the brand's goals and the creator's value.`;
+  }
+
+  // ✅ UPDATED: Use dynamic prompts based on campaign data
   async initiateOutboundCall(options = {}) {
     try {
       const {
@@ -55,8 +68,9 @@ class ElevenLabsService {
         phoneNumber,
         agentPhoneNumberId = this.agentPhoneNumberId,
         customInstructions,
+        dynamicPrompt, // ✅ NEW: Campaign-specific prompt
         metadata = {},
-        creator_pricing
+        creatorPricing
       } = options;
 
       if (!agentId) {
@@ -71,9 +85,23 @@ class ElevenLabsService {
         throw new Error('Agent phone number ID is required. Set ELEVENLABS_AGENT_PHONE_NUMBER_ID in environment variables');
       }
 
-      console.log(`🚀 Initiating ElevenLabs outbound call to: ${phoneNumber} with name ${metadata.creator_name}`);
+      console.log(`🚀 Initiating ElevenLabs outbound call to: ${phoneNumber} with ${metadata.creator_name || 'creator'}`);
 
-      // ✅ Use the correct ElevenLabs Twilio outbound call endpoint
+      // ✅ NEW: Use dynamic prompt if provided, otherwise use default
+      const systemPrompt = dynamicPrompt || this.generateDefaultPrompt(metadata.creator_name || 'creator');
+      
+      // ✅ NEW: Generate personalized first message based on campaign context
+      let firstMessage = `Hi ${metadata.creator_name}! I'm Lynda from InfluencerFlow. I've been following your content and I'm really impressed with your engagement rate.`;
+
+      if (metadata.campaign_name) {
+        firstMessage += ` I have an exciting campaign opportunity called "${metadata.campaign_name}" that I think would be perfect for your audience.`;
+      } else {
+        firstMessage += ` I have an exciting campaign opportunity that I think would be perfect for your audience.`;
+      }
+
+      firstMessage += ` Do you have a few minutes to chat?`;
+
+      // Build the call data with dynamic prompt
       const callData = {
         agent_id: agentId,
         agent_phone_number_id: agentPhoneNumberId,
@@ -82,22 +110,35 @@ class ElevenLabsService {
             conversation_config_override: {
                 agent: {
                     prompt: {
-                        prompt: 'You are Lynda, a street-smart, charismatic creator outreach specialist for a top influencer marketing agency that works with leading D2C, tech, and lifestyle brands. You specialize in onboarding Instagram and YouTube creators for paid brand collaborations, handling everything from evaluating fit to negotiating rates and locking in deals smoothly. You speak like a real person—casual, sharp, and confident—with zero pitch-talk or robotic scripts. You build trust fast by relating to creators’ content grind and asking chill, qualifying questions like “You open to collabs these days?” or “What’s your usual ballpark for something like this?” You negotiate in a relaxed, real-talk style, always keeping things respectful but honest: “Totally hear you—thing is, the brand’s budget for this tier is more like X, but I’m tryna make it work.” Your goal is to close creators on deals within a $500–$1000 range (never stated out loud), get them hyped on the opportunity, and send over contracts and briefs via email. If a creator’s not feeling it, you never push—just keep it light: “All good—maybe we circle back next time, yeah?” If they ask who you are, say: “I’m Lynda, I connect creators like you with paid brand deals. You focus on content, I handle the rest.” You never overpromise, never overexplain, and never repeat yourself—just smooth, real negotiation that respects both the brand’s goals and the creator’s value.'
+                        prompt: systemPrompt // ✅ UPDATED: Use dynamic prompt
                     },
-                    first_message: `Hi ${metadata.creator_name}! I'm the AI agent from InfluencerFlow. I've been following your content and I'm really impressed with your engagement rate. I have an exciting campaign opportunity that I think would be perfect for your audience. Do you have a few minutes to chat?`
+                    first_message: firstMessage // ✅ UPDATED: Use dynamic first message
                 }
             }
         }
       };
 
-      // Add custom instructions if provided
+      // Add custom instructions if provided (these override the campaign-specific instructions)
       if (customInstructions) {
-        callData.agent_override = {
-          prompt: customInstructions
+        callData.conversation_initiation_client_data.conversation_config_override.agent.prompt.prompt = customInstructions;
+      }
+
+      // ✅ NEW: Add campaign context to metadata for ElevenLabs
+      if (metadata.campaign_id) {
+        callData.conversation_initiation_client_data.conversation_metadata = {
+          campaign_id: metadata.campaign_id,
+          campaign_name: metadata.campaign_name,
+          creator_id: metadata.creator_id,
+          creator_name: metadata.creator_name,
+          call_purpose: 'campaign_outreach'
         };
       }
 
-      console.log('📤 Sending outbound call request:', JSON.stringify(callData, null, 2));
+      console.log('📤 Sending outbound call request with campaign-specific prompt');
+      if (process.env.DEBUG_PROMPTS === 'true') {
+        console.log('System Prompt Preview:', systemPrompt.substring(0, 200) + '...');
+        console.log('First Message:', firstMessage);
+      }
 
       const response = await this.client.post('/convai/twilio/outbound-call', callData);
       
@@ -111,7 +152,12 @@ class ElevenLabsService {
         callSid: response.data.callSid,
         agentId: agentId,
         phoneNumber: phoneNumber,
-        status: 'initiated'
+        status: 'initiated',
+        campaignContext: metadata.campaign_id ? {
+          campaign_id: metadata.campaign_id,
+          campaign_name: metadata.campaign_name,
+          dynamic_prompt_used: !!dynamicPrompt
+        } : null
       };
 
     } catch (error) {
