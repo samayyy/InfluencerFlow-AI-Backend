@@ -234,6 +234,7 @@ class JWTAuthMiddleware {
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:3001',
+      'https://influncer-flow-ai-ui.sachai.io',
       process.env.FRONTEND_URL
     ].filter(Boolean)
 

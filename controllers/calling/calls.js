@@ -366,10 +366,10 @@ const initiateCall = async (req, res) => {
     try {
         const callId = req.params.id
         console.log(callId)
-        const callDetails = await axios.get(`http://localhost:3005/api/calling/calls/${callId}`)
+        const callDetails = await axios.get(`${process.env.BASE_URL}/api/calling/calls/${callId}`)
         console.log(callDetails.data.data)
         const data = await axios.post(
-            'http://localhost:3005/api/docusign/generateAndSend',
+            `${process.env.BASE_URL}/api/docusign/generateAndSend`,
             {
               creatorId: callDetails.data.data.call.creator_id,
               transcript: callDetails.data.data.conversation_details.transcript[0].message
