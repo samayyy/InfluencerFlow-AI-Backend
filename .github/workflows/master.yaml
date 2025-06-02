@@ -21,15 +21,17 @@ jobs:
               name: "Obtain access token by using workload identity federation"
               uses: "google-github-actions/auth@v0"
 
+              # print GCP project number and ID
+
               with:
                   create_credentials_file: true
                   token_format: access_token
-                  workload_identity_provider: projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-action-sachai-pool/providers/github-action-sachai-provider
-                  service_account: github-action-svc@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+                  workload_identity_provider: projects/839579932844/locations/global/workloadIdentityPools/github-action-sachai-pool/providers/github-action-sachai-provider
+                  service_account: github-action-svc@proj-newsshield-com-ops-392712.iam.gserviceaccount.com
 
             - name: Connect to Artifact Registry
               run: |-
-                  echo ${{ steps.auth.outputs.access_token }} | docker login -u oauth2accesstoken --password-stdin https://${{ secrets.GCP_REPOSITORY_REGION }}-docker.pkg.dev
+                  echo ${{ steps.auth.outputs.access_token }} | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
 
             - name: Build Docker Image
               run: docker build -t asia-south1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/sachai-prod-infra/${{ secrets.GCP_IMAGE_NAME_PROD }}:$GITHUB_REF_NAME-$GITHUB_SHA .
