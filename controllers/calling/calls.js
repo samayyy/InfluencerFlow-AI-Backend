@@ -6,6 +6,7 @@ const validationOfAPI = require('../../middlewares/validation')
 const callService = require('../../services/calling/callService')
 const twilioService = require('../../services/calling/twilioService')
 const elevenLabsService = require('../../services/calling/elevenLabsService')
+const axios = require('axios')
 
 /**
  * @namespace -CALLING-MODULE-
@@ -361,38 +362,114 @@ const initiateCall = async (req, res) => {
       end_date: { type: 'string', required: false }
     }
   }
+  const sendDocuSign = async (req, res) => {
+    try {
+        const callId = req.params.id
+        console.log(callId)
+        const callDetails = await axios.get(`http://localhost:3005/api/calling/calls/${callId}`)
+        console.log(callDetails.data.data)
+        const data = await axios.post(
+            'http://localhost:3005/api/docusign/generateAndSend',
+            {
+              creatorId: callDetails.data.data.call.creator_id,
+              transcript: callDetails.data.data.conversation_details.transcript[0].message
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${process.env.DOCUSIGN_ACCESS_TOKEN}`
+              }
+            }
+          )
+          
+        res.sendJson({
+            type: __constants.RESPONSE_MESSAGES.SUCCESS,
+            data: data
+        })
+        // if(callDetails.data.data.conversationDetails.analysis.call_successful == 'succesful') {
+        //     const data = await axios.post('http://localhost:3005/api/docusign/generateAndSend', {
+        //         creatorId: callDetails.data.data.call.creator_id,
+        //         transcript: callDetails.data.data.conversationDetails.transcript[0].message
+        //     })
+        //     res.sendJson({
+        //         type: __constants.RESPONSE_MESSAGES.SUCCESS,
+        //         data: data
+        //     })
+        // }
+        // res.sendJson({
+        //     type: __constants.RESPONSE_MESSAGES.SUCCESS,
+        //     data: `Onboarding Creator with id ${callDetails.data.data.call.creator_id} was Unsuccesful`
+        // })
+
+    } catch (err) {
+        console.error('Error sending document:', err)
+        return res.sendJson({
+          type: err.type || __constants.RESPONSE_MESSAGES.SERVER_ERROR,
+          err: err.message || err
+        })
+      }
+  }
   
   const getCallsValidation = (req, res, next) => {
     return validationOfAPI(req, res, next, getCallsValidationSchema, 'query')
   }
-  
-  const getAllCalls = async (req, res) => {
+
+
+const getAllCalls = async (req, res) => {
     try {
       const filters = {}
       const pagination = {}
   
       // Extract filters
       if (req.query.creator_id) filters.creatorId = req.query.creator_id
-      if (req.query.campaign_id) filters.campaignId = req.query.campaign_id // ✅ NEW: Campaign filter
+      if (req.query.campaign_id) filters.campaignId = req.query.campaign_id
       if (req.query.status) filters.status = req.query.status
       if (req.query.outcome) filters.outcome = req.query.outcome
       if (req.query.start_date) filters.startDate = req.query.start_date
       if (req.query.end_date) filters.endDate = req.query.end_date
+      if (req.query.call_method) filters.callMethod = req.query.call_method
+  
+      // ✅ NEW: Handle conversation details parameter
+      if (req.query.include_conversation_details !== undefined) {
+        // Convert string to boolean
+        filters.includeConversationDetails = req.query.include_conversation_details !== 'false'
+      }
   
       // Extract pagination
       if (req.query.page) pagination.page = parseInt(req.query.page)
       if (req.query.limit) pagination.limit = parseInt(req.query.limit)
   
-      const result = await callService.getCalls(filters, pagination)
+      // ✅ PERFORMANCE WARNING: Log if including conversation details with large limit
+      if (filters.includeConversationDetails !== false && pagination.limit > 50) {
+        console.warn(`⚠️ Large request: fetching conversation details for ${pagination.limit} calls may be slow`)
+      }
   
-      res.sendJson({
+      const startTime = Date.now();
+      const result = await callService.getCalls(filters, pagination)
+      const endTime = Date.now();
+  
+      // ✅ NEW: Enhanced response with performance info
+      const response = {
         type: __constants.RESPONSE_MESSAGES.SUCCESS,
         data: {
           calls: result.calls,
           pagination: result.pagination,
-          filters_applied: filters
+          filters_applied: filters,
+          campaign_stats: result.campaign_stats,
+          conversation_details_included: result.conversation_details_included,
+          performance: {
+            query_time_ms: endTime - startTime,
+            calls_returned: result.calls.length,
+            ...result.performance_info
+          }
         }
-      })
+      }
+  
+      // ✅ NEW: Add usage tips in response
+      if (!result.conversation_details_included) {
+        response.data.tip = "Add ?include_conversation_details=true to get Twilio and ElevenLabs conversation details for each call"
+      }
+  
+      res.sendJson(response)
     } catch (err) {
       console.error('Error getting calls:', err)
       return res.sendJson({
@@ -791,6 +868,7 @@ router.get('/campaigns/:campaignId/calls',
 )
 // router.post('/initiate', initiateCallValidation, initiateCall)
 router.get('/calls/:callId', callIdValidation, getCallDetails)
+router.get('/sendToDocuSign/:id', sendDocuSign)
 router.get('/calls', getCallsValidation, getAllCalls)
 router.post('/calls/:callId/terminate', callIdValidation, terminateCall)
 router.get('/calls/:callId/recordings', callIdValidation, getCallRecordings)

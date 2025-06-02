@@ -507,148 +507,260 @@ Never overpromise, never overexplain, and never repeat yourself—just smooth, r
     }
   }
 
-    // Get calls with filtering and pagination (including campaign filtering)
-    async getCalls (filters = {}, pagination = {}) {
-        try {
-        const { page = 1, limit = 20 } = pagination
-        const offset = (page - 1) * limit
+    // Get calls with filtering and pagination (including conversation details)
+async getCalls (filters = {}, pagination = {}) {
+    try {
+    const { page = 1, limit = 20 } = pagination
+    const offset = (page - 1) * limit
 
-        let whereClause = 'WHERE 1=1'
-        const values = []
-        let paramCount = 0
+    // Add option to include conversation details (can be controlled via query parameter)
+    const includeConversationDetails = filters.includeConversationDetails !== false; // Default to true
 
-        // Build filters
-        if (filters.creatorId) {
-            paramCount++
-            whereClause += ` AND c.creator_id = $${paramCount}`
-            values.push(filters.creatorId)
-        }
+    let whereClause = 'WHERE 1=1'
+    const values = []
+    let paramCount = 0
 
-        if (filters.campaignId) { // ✅ NEW: Campaign filter
-            paramCount++
-            whereClause += ` AND c.campaign_id = $${paramCount}`
-            values.push(filters.campaignId)
-        }
+    // Build filters
+    if (filters.creatorId) {
+        paramCount++
+        whereClause += ` AND c.creator_id = $${paramCount}`
+        values.push(filters.creatorId)
+    }
 
-        if (filters.status) {
-            paramCount++
-            whereClause += ` AND c.status = $${paramCount}`
-            values.push(filters.status)
-        }
+    if (filters.campaignId) {
+        paramCount++
+        whereClause += ` AND c.campaign_id = $${paramCount}`
+        values.push(filters.campaignId)
+    }
 
-        if (filters.outcome) {
-            paramCount++
-            whereClause += ` AND c.call_outcome = $${paramCount}`
-            values.push(filters.outcome)
-        }
+    if (filters.status) {
+        paramCount++
+        whereClause += ` AND c.status = $${paramCount}`
+        values.push(filters.status)
+    }
 
-        if (filters.callMethod) {
-            paramCount++;
-            whereClause += ` AND c.call_method = $${paramCount}`;
-            values.push(filters.callMethod);
-        }
+    if (filters.outcome) {
+        paramCount++
+        whereClause += ` AND c.call_outcome = $${paramCount}`
+        values.push(filters.outcome)
+    }
 
-        if (filters.startDate) {
-            paramCount++
-            whereClause += ` AND c.created_at >= $${paramCount}`
-            values.push(filters.startDate)
-        }
+    if (filters.callMethod) {
+        paramCount++;
+        whereClause += ` AND c.call_method = $${paramCount}`;
+        values.push(filters.callMethod);
+    }
 
-        if (filters.endDate) {
-            paramCount++
-            whereClause += ` AND c.created_at <= $${paramCount}`
-            values.push(filters.endDate)
-        }
+    if (filters.startDate) {
+        paramCount++
+        whereClause += ` AND c.created_at >= $${paramCount}`
+        values.push(filters.startDate)
+    }
 
-        // ✅ UPDATED: Enhanced query with campaign information
-        const query = `
-            SELECT 
-            c.*,
-            cr.creator_name,
-            ca.sentiment_score,
-            ca.conversation_quality_score,
-            ca.follow_up_required,
-            camp.campaign_name,
-            camp.campaign_type,
-            camp.status as campaign_status,
-            b.brand_name
-            FROM calls c
-            LEFT JOIN creators cr ON c.creator_id = cr.id
-            LEFT JOIN call_analytics ca ON c.id = ca.call_id
-            LEFT JOIN campaigns camp ON c.campaign_id = camp.id
-            LEFT JOIN brands b ON camp.brand_id = b.id
-            ${whereClause}
-            ORDER BY c.created_at DESC
-            LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
-        `
+    if (filters.endDate) {
+        paramCount++
+        whereClause += ` AND c.created_at <= $${paramCount}`
+        values.push(filters.endDate)
+    }
 
-        values.push(limit, offset)
+    // Enhanced query with campaign information
+    const query = `
+        SELECT 
+        c.*,
+        cr.creator_name,
+        ca.sentiment_score,
+        ca.conversation_quality_score,
+        ca.follow_up_required,
+        ca.key_topics,
+        ca.next_action,
+        camp.campaign_name,
+        camp.campaign_type,
+        camp.status as campaign_status,
+        b.brand_name
+        FROM calls c
+        LEFT JOIN creators cr ON c.creator_id = cr.id
+        LEFT JOIN call_analytics ca ON c.id = ca.call_id
+        LEFT JOIN campaigns camp ON c.campaign_id = camp.id
+        LEFT JOIN brands b ON camp.brand_id = b.id
+        ${whereClause}
+        ORDER BY c.created_at DESC
+        LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}
+    `
 
-        const result = await this.pool.query(query, values)
+    values.push(limit, offset)
 
-        // Get total count with same filters
-        const countQuery = `
-            SELECT COUNT(*) as total
-            FROM calls c
-            LEFT JOIN campaigns camp ON c.campaign_id = camp.id
-            ${whereClause}
-        `
+    const result = await this.pool.query(query, values)
+    let calls = result.rows;
 
-        const countResult = await this.pool.query(countQuery, values.slice(0, -2))
-        const total = parseInt(countResult.rows[0].total)
+    // ✅ NEW: Add conversation details to each call if requested
+    if (includeConversationDetails && calls.length > 0) {
+        console.log(`🔍 Fetching conversation details for ${calls.length} calls...`);
+        
+        // Process calls in parallel for better performance
+        const callsWithDetails = await Promise.all(calls.map(async (call) => {
+            const conversationDetails = {
+                twilio_details: null,
+                conversation_details: null,
+                campaign_details: null
+            };
 
-        // ✅ NEW: Add campaign statistics if filtering by campaign
-        let campaignStats = null
-        if (filters.campaignId) {
             try {
-            const statsQuery = `
-                SELECT 
-                COUNT(*) as total_calls,
-                COUNT(CASE WHEN c.status = 'completed' THEN 1 END) as completed_calls,
-                COUNT(CASE WHEN c.call_outcome = 'completed' THEN 1 END) as successful_calls,
-                AVG(c.duration_seconds) as avg_duration,
-                SUM(c.cost_usd) as total_cost,
-                COUNT(DISTINCT c.creator_id) as unique_creators
-                FROM calls c
-                WHERE c.campaign_id = $1
-            `
-            
-            const statsResult = await this.pool.query(statsQuery, [filters.campaignId])
-            const stats = statsResult.rows[0]
-            
-            campaignStats = {
-                total_calls: parseInt(stats.total_calls) || 0,
-                completed_calls: parseInt(stats.completed_calls) || 0,
-                successful_calls: parseInt(stats.successful_calls) || 0,
-                success_rate: stats.total_calls > 0 
-                ? ((stats.successful_calls / stats.total_calls) * 100).toFixed(2) + '%'
-                : '0%',
-                avg_duration_minutes: stats.avg_duration 
-                ? (parseFloat(stats.avg_duration) / 60).toFixed(2)
-                : 0,
-                total_cost_usd: parseFloat(stats.total_cost || 0).toFixed(2),
-                unique_creators: parseInt(stats.unique_creators) || 0
-            }
-            } catch (error) {
-            console.warn('Could not fetch campaign statistics:', error.message)
-            }
-        }
+                // Get Twilio details if available
+                if (call.call_sid) {
+                    try {
+                        conversationDetails.twilio_details = await twilioService.getCallDetails(call.call_sid);
+                    } catch (error) {
+                        console.warn(`Could not fetch Twilio details for call ${call.id}:`, error.message);
+                        conversationDetails.twilio_details = { error: 'Failed to fetch Twilio details' };
+                    }
+                }
 
-        return {
-            calls: result.rows,
-            pagination: {
-            page: parseInt(page),
-            limit: parseInt(limit),
-            total,
-            pages: Math.ceil(total / limit)
-            },
-            campaign_stats: campaignStats // ✅ NEW: Include campaign stats if relevant
+                // Get ElevenLabs conversation details if available
+                if (call.elevenlabs_conversation_id) {
+                    try {
+                        conversationDetails.conversation_details = await elevenLabsService.getConversation(call.elevenlabs_conversation_id);
+                    } catch (error) {
+                        console.warn(`Could not fetch ElevenLabs conversation for call ${call.id}:`, error.message);
+                        conversationDetails.conversation_details = { error: 'Failed to fetch conversation details' };
+                    }
+                }
+
+                // Get campaign details if call was made for a campaign
+                if (call.campaign_id && !call.campaign_name) {
+                    try {
+                        const campaignResult = await this.pool.query(
+                            'SELECT id, campaign_name, campaign_type, status, brand_id FROM campaigns WHERE id = $1',
+                            [call.campaign_id]
+                        );
+
+                        if (campaignResult.rows.length > 0) {
+                            conversationDetails.campaign_details = campaignResult.rows[0];
+                        }
+                    } catch (error) {
+                        console.warn(`Could not fetch campaign details for call ${call.id}:`, error.message);
+                    }
+                }
+
+                // Return call with conversation details
+                return {
+                    ...call,
+                    conversation_details: conversationDetails.conversation_details,
+                    twilio_details: conversationDetails.twilio_details,
+                    campaign_details: conversationDetails.campaign_details || {
+                        campaign_name: call.campaign_name,
+                        campaign_type: call.campaign_type,
+                        campaign_status: call.campaign_status,
+                        brand_name: call.brand_name
+                    },
+                    // Add structured insights for easy access
+                    insights: {
+                        call_outcome: call.call_outcome,
+                        sentiment_score: call.sentiment_score,
+                        follow_up_required: call.follow_up_required,
+                        key_topics: call.key_topics,
+                        next_action: call.next_action
+                    }
+                };
+
+            } catch (error) {
+                console.error(`Error fetching conversation details for call ${call.id}:`, error);
+                // Return call without additional details if there's an error
+                return {
+                    ...call,
+                    conversation_details: { error: 'Failed to fetch conversation details' },
+                    twilio_details: null,
+                    campaign_details: call.campaign_name ? {
+                        campaign_name: call.campaign_name,
+                        campaign_type: call.campaign_type,
+                        campaign_status: call.campaign_status,
+                        brand_name: call.brand_name
+                    } : null,
+                    insights: {
+                        call_outcome: call.call_outcome,
+                        sentiment_score: call.sentiment_score,
+                        follow_up_required: call.follow_up_required,
+                        key_topics: call.key_topics,
+                        next_action: call.next_action
+                    }
+                };
+            }
+        }));
+
+        calls = callsWithDetails;
+        console.log(`✅ Conversation details fetched for all calls`);
+    }
+
+    // Get total count with same filters
+    const countQuery = `
+        SELECT COUNT(*) as total
+        FROM calls c
+        LEFT JOIN campaigns camp ON c.campaign_id = camp.id
+        ${whereClause}
+    `
+
+    const countResult = await this.pool.query(countQuery, values.slice(0, -2))
+    const total = parseInt(countResult.rows[0].total)
+
+    // Add campaign statistics if filtering by campaign
+    let campaignStats = null
+    if (filters.campaignId) {
+        try {
+        const statsQuery = `
+            SELECT 
+            COUNT(*) as total_calls,
+            COUNT(CASE WHEN c.status = 'completed' THEN 1 END) as completed_calls,
+            COUNT(CASE WHEN c.call_outcome = 'completed' THEN 1 END) as successful_calls,
+            AVG(c.duration_seconds) as avg_duration,
+            SUM(c.cost_usd) as total_cost,
+            COUNT(DISTINCT c.creator_id) as unique_creators
+            FROM calls c
+            WHERE c.campaign_id = $1
+        `
+        
+        const statsResult = await this.pool.query(statsQuery, [filters.campaignId])
+        const stats = statsResult.rows[0]
+        
+        campaignStats = {
+            total_calls: parseInt(stats.total_calls) || 0,
+            completed_calls: parseInt(stats.completed_calls) || 0,
+            successful_calls: parseInt(stats.successful_calls) || 0,
+            success_rate: stats.total_calls > 0 
+            ? ((stats.successful_calls / stats.total_calls) * 100).toFixed(2) + '%'
+            : '0%',
+            avg_duration_minutes: stats.avg_duration 
+            ? (parseFloat(stats.avg_duration) / 60).toFixed(2)
+            : 0,
+            total_cost_usd: parseFloat(stats.total_cost || 0).toFixed(2),
+            unique_creators: parseInt(stats.unique_creators) || 0
         }
         } catch (error) {
-        console.error('Error fetching calls:', error)
-        throw error
+        console.warn('Could not fetch campaign statistics:', error.message)
         }
     }
+
+    return {
+        calls: calls,
+        pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+        },
+        campaign_stats: campaignStats,
+        // ✅ NEW: Indicate if conversation details were included
+        conversation_details_included: includeConversationDetails,
+        performance_info: includeConversationDetails ? {
+            message: 'Conversation details included - this may take longer for large result sets',
+            calls_processed: calls.length
+        } : {
+            message: 'Basic call data only - add includeConversationDetails=true to get full details'
+        }
+    }
+    } catch (error) {
+    console.error('Error fetching calls:', error)
+    throw error
+    }
+}
     // Get call analytics/statistics with campaign support
     async getCallAnalytics (filters = {}) {
         try {
