@@ -8,6 +8,9 @@ RUN apk add git
 
 RUN npm install --production
 
+RUN npm install -g nodemon
+# Install dependencies
+
 ADD . /app
 
 RUN mkdir -p /var/log/node_apps/
