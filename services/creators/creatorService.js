@@ -286,6 +286,9 @@ class CreatorService {
 
     values.push(limit, offset)
 
+    console.log(`Executing query: ${query}`)
+    console.log(`With values: ${JSON.stringify(values)}`)
+
     const result = await this.pool.query(query, values)
 
     // Get total count for pagination
