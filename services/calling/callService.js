@@ -336,7 +336,7 @@ For ${campaign_type.replace('_', ' ')}:
 - Timeline: "Launch ${campaign_type === 'event_coverage' ? 'during event week' : 'in 2-3 weeks'} with content delivered by [specific date]"
 
 NEGOTIATION STRATEGY:
-Budget Range: ${suggestedPricing} (never state upfront—let them share rates first)
+Budget Range: ${suggestedPricing} (never state upfront—let them share rates first. When sharing the budget, only mention the higher end of the budget range, NOT the lower end.)
 Your negotiation style: relaxed, real-talk approach. "Totally hear you—thing is, the brand's budget for this tier is more like X, but I'm tryna make it work."
 
 PROFESSIONAL BOUNDARIES:
