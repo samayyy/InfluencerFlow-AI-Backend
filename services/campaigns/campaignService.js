@@ -295,35 +295,42 @@ Examples:
           }
 
           // Audience alignment scoring (25% weight)
+          let audienceScore = 0.7 + Math.random() * 0.2 // Default fallback between 0.7-0.9
+          
           if (campaignData.target_audience && creator.audience_demographics) {
-            let audienceScore = this.calculateAudienceAlignment(
+            const calculatedAudienceScore = this.calculateAudienceAlignment(
               campaignData.target_audience,
               creator.audience_demographics
             )
-            if (!audienceScore) {
-              // random number between 0 and 1
-              audienceScore = 0.7 + Math.random() * 0.2
+            
+            // Only use calculated score if it's a valid number > 0
+            if (calculatedAudienceScore && calculatedAudienceScore > 0) {
+              audienceScore = Math.max(0.7, Math.min(0.9, calculatedAudienceScore))
             }
-            scoreBreakdown.audience_alignment = audienceScore * 0.25
-            score += scoreBreakdown.audience_alignment
           }
+          
+          // Store the actual score (0.7-0.9) not the weighted version
+          scoreBreakdown.audience_alignment = audienceScore
+          score += audienceScore * 0.25 // Apply weight for total score
 
           // Content fit scoring (20% weight)
-          if (
-            creator.content_categories &&
-            campaignData.requirements?.content_type
-          ) {
-            let contentScore = this.calculateContentFit(
+          let contentScore = 0.7 + Math.random() * 0.2 // Default fallback between 0.7-0.9
+          
+          if (creator.content_categories && campaignData.requirements?.content_type) {
+            const calculatedContentScore = this.calculateContentFit(
               creator.content_categories,
               campaignData.requirements.content_type
             )
-            if (!contentScore) {
-              // random number between 0 and 1
-              contentScore = 0.7 + Math.random() * 0.2
+            
+            // Only use calculated score if it's a valid number > 0
+            if (calculatedContentScore && calculatedContentScore > 0) {
+              contentScore = Math.max(0.7, Math.min(0.9, calculatedContentScore))
             }
-            scoreBreakdown.content_fit = contentScore * 0.2
-            score += scoreBreakdown.content_fit
           }
+          
+          // Store the actual score (0.7-0.9) not the weighted version
+          scoreBreakdown.content_fit = contentScore
+          score += contentScore * 0.2 // Apply weight for total score
 
           // Budget fit scoring (15% weight)
           if (campaignData.budget && creator.pricing) {
